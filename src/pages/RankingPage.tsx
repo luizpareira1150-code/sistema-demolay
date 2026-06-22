@@ -94,7 +94,7 @@ export default function RankingPage({
           </p>
         </div>
         <div className="bg-slate-800 px-4 py-2 border border-slate-700/55 rounded-lg text-xs font-semibold text-slate-350 shrink-0 select-none">
-          Critério de Zonas: <span className="text-emerald-400 font-bold">&gt;70% Verde</span> &bull; <span className="text-amber-400 font-bold">60%-70% Amarela</span> &bull; <span className="text-rose-450 font-bold" style={{ color: '#fb7185' }}>&lt;60% Vermelha</span>
+          Critério de Classificação: <span className="text-emerald-400 font-bold">&gt;70% DeMolay Exemplo</span> &bull; <span className="text-amber-400 font-bold">60%-70% DeMolay em Alerta</span> &bull; <span className="text-rose-450 font-bold" style={{ color: '#fb7185' }}>&lt;60% DeMolay Não Exemplo</span>
         </div>
       </div>
 
@@ -152,10 +152,10 @@ export default function RankingPage({
               onChange={e => setZoneFilter(e.target.value as 'all' | 'green' | 'yellow' | 'red')}
               className="w-full border border-slate-300 rounded-lg p-2.5 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:bg-white"
             >
-              <option value="all">Todas as Zonas</option>
-              <option value="green">Zona Verde (Acima de 70%)</option>
-              <option value="yellow">Zona Amarela (60% até 70%)</option>
-              <option value="red">Zona Vermelha (Abaixo de 60%)</option>
+              <option value="all">Todas as Categorias de Freq.</option>
+              <option value="green">DeMolay Exemplo (Acima de 70%)</option>
+              <option value="yellow">DeMolay em Alerta (60% até 70%)</option>
+              <option value="red">DeMolay Não Exemplo (Abaixo de 60%)</option>
             </select>
           </div>
 
@@ -293,7 +293,7 @@ export default function RankingPage({
                         stat.zone === 'yellow' ? 'bg-amber-100/70 text-amber-850 border border-amber-250' : 
                         'bg-red-100/70 text-red-850 border border-red-250'
                       }`}>
-                        {stat.zone === 'green' ? 'Zona Verde' : stat.zone === 'yellow' ? 'Zona Amarela' : 'Zona Vermelha'}
+                        {stat.zone === 'green' ? 'DeMolay Exemplo' : stat.zone === 'yellow' ? 'DeMolay em Alerta' : 'DeMolay Não Exemplo'}
                       </span>
                     </div>
 

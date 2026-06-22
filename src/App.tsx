@@ -51,10 +51,28 @@ function AppContent() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => getCurrentUser());
 
   // Shared application states
-  const [members, setMembers] = useState<Member[]>(() => getMembers());
-  const [events, setEvents] = useState<Event[]>(() => getEvents());
-  const [attendances, setAttendances] = useState<Attendance[]>(() => getAttendances());
-  const [users, setUsers] = useState<User[]>(() => getUsers());
+  const [members, setMembers] = useState<Member[]>(() => {
+    // If we have already synced to Supabase, get the local cache.
+    // If not, we will display our beautiful loading screen while fetching, so returning empty array is fine.
+    const hasSynced = localStorage.getItem('demolay_has_synced') === 'true';
+    return hasSynced ? getMembers() : [];
+  });
+  const [events, setEvents] = useState<Event[]>(() => {
+    const hasSynced = localStorage.getItem('demolay_has_synced') === 'true';
+    return hasSynced ? getEvents() : [];
+  });
+  const [attendances, setAttendances] = useState<Attendance[]>(() => {
+    const hasSynced = localStorage.getItem('demolay_has_synced') === 'true';
+    return hasSynced ? getAttendances() : [];
+  });
+  const [users, setUsers] = useState<User[]>(() => {
+    const hasSynced = localStorage.getItem('demolay_has_synced') === 'true';
+    return hasSynced ? getUsers() : [];
+  });
+
+  const [initialSyncLoading, setInitialSyncLoading] = useState(() => {
+    return localStorage.getItem('demolay_has_synced') !== 'true';
+  });
 
   // Navigation overrides or modal selections
   const [selectedEventForAttendance, setSelectedEventForAttendance] = useState<Event | null>(null);
@@ -95,14 +113,27 @@ function AppContent() {
             }
             setUsers(finalUsers);
             console.log('Dados do Supabase baixados e sincronizados com sucesso na inicialização!');
+            localStorage.setItem('demolay_has_synced', 'true');
           }
         } else {
           // Offline fallback
           const currentUsers = getUsers();
           setUsers(currentUsers);
+          setMembers(getMembers());
+          setEvents(getEvents());
+          setAttendances(getAttendances());
+          localStorage.setItem('demolay_has_synced', 'true');
         }
       } catch (err) {
         console.warn('Falha na sincronização inicial com o Supabase:', err);
+        // Fallback to avoid screen locking on errors
+        localStorage.setItem('demolay_has_synced', 'true');
+        setUsers(getUsers());
+        setMembers(getMembers());
+        setEvents(getEvents());
+        setAttendances(getAttendances());
+      } finally {
+        setInitialSyncLoading(false);
       }
     };
 
@@ -245,6 +276,30 @@ function AppContent() {
     setSelectedEventForAttendance(event);
     navigate('/admin/presencas');
   };
+
+  if (initialSyncLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center font-sans select-none">
+        <div className="relative flex flex-col items-center max-w-sm">
+          {/* Outer glowing pulsing aura */}
+          <div className="absolute top-1/2 left-1/2 -translated-x-1/2 -translated-y-1/2 w-48 h-48 rounded-full bg-indigo-500/15 blur-2xl animate-pulse"></div>
+          
+          {/* Animated spinner ring */}
+          <div className="relative w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mb-6"></div>
+          
+          <h2 className="text-xl font-extrabold text-slate-100 tracking-tight mb-2">
+            Carregando o Sistema
+          </h2>
+          <p className="text-xs text-slate-400 font-medium leading-relaxed">
+            Sincronizando em tempo real com o banco de dados Supabase na nuvem...
+          </p>
+          <div className="mt-8 text-[10px] font-mono text-slate-500 tracking-widest uppercase">
+            Capítulo Ordem DeMolay
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

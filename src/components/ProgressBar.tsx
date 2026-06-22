@@ -23,16 +23,16 @@ export default function ProgressBar({ value, hasEvents, showText = true }: Progr
   // Color logic
   let barColor = 'bg-rose-500';
   let textColor = 'text-rose-600';
-  let zoneLabel = 'Zona Vermelha';
+  let zoneLabel = 'DeMolay Não Exemplo';
 
   if (value > 70) {
     barColor = 'bg-emerald-500';
     textColor = 'text-emerald-700';
-    zoneLabel = 'Zona Verde';
+    zoneLabel = 'DeMolay Exemplo';
   } else if (value >= 60) {
     barColor = 'bg-amber-400';
     textColor = 'text-amber-700';
-    zoneLabel = 'Zona Amarela';
+    zoneLabel = 'DeMolay em Alerta';
   }
 
   return (

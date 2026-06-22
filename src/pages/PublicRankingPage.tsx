@@ -127,7 +127,7 @@ export default function PublicRankingPage({
               Critério da Porcentagem Final
             </h4>
             <p className="text-indigo-955 text-xs font-medium leading-normal">
-              A porcentagem final considera presenças obrigatórias e participações extras com peso {EXTRA_PARTICIPATION_WEIGHT}.
+              A porcentagem final considera presenças obrigatórias nas atividades do nosso Capítulo.
             </p>
           </div>
         </div>
@@ -200,21 +200,21 @@ export default function PublicRankingPage({
               <div className="flex items-center justify-between text-xs bg-slate-800/40 px-3 py-1.5 rounded border border-slate-850">
                 <span className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                  Zona Verde
+                  DeMolay Exemplo
                 </span>
                 <strong className="text-emerald-400">&ge; 70% de Freq.</strong>
               </div>
               <div className="flex items-center justify-between text-xs bg-slate-800/40 px-3 py-1.5 rounded border border-slate-850">
                 <span className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                  Zona Amarela
+                  DeMolay em Alerta
                 </span>
                 <strong className="text-amber-400">60% - 70% de Freq.</strong>
               </div>
               <div className="flex items-center justify-between text-xs bg-slate-800/40 px-3 py-1.5 rounded border border-slate-850">
                 <span className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-                  Zona Vermelha
+                  DeMolay Não Exemplo
                 </span>
                 <strong className="text-rose-400">&lt; 60% de Freq.</strong>
               </div>
@@ -279,7 +279,7 @@ export default function PublicRankingPage({
                           stat.zone === 'yellow' ? 'bg-amber-50 text-amber-800 border-amber-100' :
                           'bg-rose-50 text-rose-800 border-rose-100'
                         }`}>
-                          {stat.zone === 'green' ? 'Zona Verde' : stat.zone === 'yellow' ? 'Zona Amarela' : 'Zona Vermelha'}
+                          {stat.zone === 'green' ? 'DeMolay Exemplo' : stat.zone === 'yellow' ? 'DeMolay em Alerta' : 'DeMolay Não Exemplo'}
                         </span>
                       </div>
 

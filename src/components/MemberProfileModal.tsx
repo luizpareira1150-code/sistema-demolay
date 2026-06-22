@@ -121,7 +121,7 @@ export default function MemberProfileModal({
                   generalStats.zone === 'yellow' ? 'bg-amber-50 text-amber-800 border-amber-100' :
                   'bg-rose-50 text-rose-800 border-rose-100'
                 }`}>
-                  {generalStats.zone === 'green' ? 'Zona Verde' : generalStats.zone === 'yellow' ? 'Zona Amarela' : 'Zona Vermelha'}
+                  {generalStats.zone === 'green' ? 'DeMolay Exemplo' : generalStats.zone === 'yellow' ? 'DeMolay em Alerta' : 'DeMolay Não Exemplo'}
                 </span>
               </div>
               <ProgressBar value={generalStats.finalPercentage} hasEvents={generalStats.hasConsideredEvents} />
@@ -192,7 +192,7 @@ export default function MemberProfileModal({
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between text-[11px] font-semibold">
                             <span className={`text-${badgeColor === 'emerald' ? 'emerald-600' : badgeColor === 'amber' ? 'amber-500' : 'rose-600'} uppercase text-[9px] font-bold`}>
-                              {stats.zone === 'green' ? 'Zona Verde' : stats.zone === 'yellow' ? 'Zona Amarela' : 'Zona Vermelha'}
+                              {stats.zone === 'green' ? 'DeMolay Exemplo' : stats.zone === 'yellow' ? 'DeMolay em Alerta' : 'DeMolay Não Exemplo'}
                             </span>
                             <span className="text-slate-800">{stats.attendanceRate}%</span>
                           </div>
