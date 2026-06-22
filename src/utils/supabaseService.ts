@@ -326,11 +326,6 @@ export async function uploadLocalToSupabase(): Promise<{ success: boolean; messa
  */
 export async function downloadSupabaseToLocal(): Promise<{ success: boolean; message: string; data?: { members: Member[]; events: Event[]; attendances: Attendance[]; users: User[] } }> {
   try {
-    const testConn = await checkSupabaseConnection();
-    if (!testConn.connected) {
-      return { success: false, message: testConn.error || 'Não foi possível conectar ao Supabase. Verifique seu esquema.' };
-    }
-
     // 1. Fetch Members
     const membersRes = await supabase.from(SUPABASE_TABLES.MEMBERS).select('*');
     if (membersRes.error) throw new Error(`Erro ao buscar Membros: ${membersRes.error.message}`);

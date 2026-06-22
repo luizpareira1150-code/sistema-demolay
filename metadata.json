@@ -1,5 +1,5 @@
 {
-  "name": "Painel de Avaliação DeMolay",
+  "name": "Sistema de Avaliação DeMolay",
   "description": "Painel para acompanhamento de participação dos membros de um Capítulo da Ordem DeMolay em atividades oficiais e extras.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
