@@ -343,7 +343,7 @@ export default function PublicRankingPage({
       <footer className="no-print bg-slate-900 text-slate-400 py-6 border-t border-slate-800 text-center text-xs shrink-0 mt-8">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-slate-500">
-            &copy; {new Date().getFullYear()} Painel de Avaliação DeMolay. Todos os direitos reservados.
+            &copy; {new Date().getFullYear()} PAAD - Painel de Avaliação DeMolay. Todos os direitos reservados.
           </p>
           <div className="flex items-center gap-2">
             <Link

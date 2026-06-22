@@ -57,7 +57,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           </div>
         </div>
         <h2 className="mt-6 text-center text-3xl font-extrabold tracking-tight text-slate-900 font-display">
-          Painel de Avaliação DeMolay
+          PAAD - Painel de Avaliação DeMolay
         </h2>
         <p className="mt-2 text-center text-sm text-slate-600">
           Acompanhamento de participação e frequência institucional

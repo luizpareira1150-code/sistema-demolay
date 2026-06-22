@@ -120,12 +120,12 @@ export default function Layout({
 
       {/* Mobile Header Menu (hidden on printing and on desktop) */}
       <header className="no-print md:hidden bg-slate-900 text-white p-4 flex items-center justify-between border-b border-slate-800 shrink-0">
-        <div className="flex items-center gap-2">
+         <div className="flex items-center gap-2">
           <div className="w-6 h-6 bg-amber-500 rounded flex items-center justify-center font-bold text-slate-900 text-xs shrink-0">
             DM
           </div>
           <h2 className="font-bold text-sm tracking-wide font-display text-white">
-            Painel DeMolay
+            PAAD - DeMolay
           </h2>
         </div>
         <button
@@ -146,7 +146,7 @@ export default function Layout({
                 <div className="w-8 h-8 bg-amber-500 rounded flex items-center justify-center font-bold text-slate-900 text-sm shrink-0">
                   DM
                 </div>
-                <span className="font-bold font-display text-white">Painel DeMolay</span>
+                <span className="font-bold font-display text-white">PAAD - DeMolay</span>
               </div>
               <button onClick={() => setMobileMenuOpen(false)} className="p-1 rounded bg-slate-800">
                 <X className="h-4 w-4" />
