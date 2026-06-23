@@ -44,6 +44,19 @@ export default function UsersPage({
     );
   }
 
+  // Block if Diretoria Admin doesn't have a linked management term
+  if (currentUser.role === 'diretoria_admin' && !currentUser.managementTermId) {
+    return (
+      <div className="bg-red-55 p-6 rounded-xl border border-red-200 text-center space-y-4 max-w-xl mx-auto">
+        <ShieldAlert className="h-10 w-10 text-red-650 mx-auto" />
+        <h3 className="text-lg font-bold text-red-900">Gestão Não Vinculada</h3>
+        <p className="text-sm text-red-700 font-semibold font-sans">
+          Sua conta Diretoria Admin não está vinculada a uma gestão. Procure um administrador.
+        </p>
+      </div>
+    );
+  }
+
   // Form modals state
   const [successMessage, setSuccessMessage] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -89,9 +102,8 @@ export default function UsersPage({
         alert('Sua conta Diretoria Admin não está vinculada a uma gestão. Procure um administrador.');
         return;
       }
-      const isSelf = user.id === currentUser.id;
-      if (!isSelf && (user.role !== 'diretoria' || user.managementTermId !== currentUser.managementTermId)) {
-        alert('Ação não permitida para este perfil.');
+      if (user.role !== 'diretoria' || user.managementTermId !== currentUser.managementTermId) {
+        alert('Você não pode editar usuários de outra gestão.');
         return;
       }
     }
@@ -143,17 +155,12 @@ export default function UsersPage({
     if (editingUser) {
       // Editing Mode
       if (currentUser.role === 'diretoria_admin') {
-        const isSelf = editingUser.id === currentUser.id;
-        if (!isSelf && (editingUser.role !== 'diretoria' || editingUser.managementTermId !== currentUser.managementTermId)) {
-          setFormError('Ação não permitida para este perfil.');
+        if (editingUser.role !== 'diretoria' || editingUser.managementTermId !== currentUser.managementTermId) {
+          setFormError('Você não pode editar usuários de outra gestão.');
           return;
         }
-        if (formRole !== editingUser.role) {
-          setFormError('Você não pode alterar o perfil deste usuário.');
-          return;
-        }
-        if (formManagementTermId !== editingUser.managementTermId) {
-          setFormError('Você não pode alterar a gestão vinculada deste usuário.');
+        if (formRole !== editingUser.role || formManagementTermId !== editingUser.managementTermId) {
+          setFormError('Você não pode alterar o perfil ou a gestão vinculada deste usuário.');
           return;
         }
       } else if (currentUser.role === 'admin') {
@@ -178,7 +185,7 @@ export default function UsersPage({
           return;
         }
         if (formManagementTermId !== currentUser.managementTermId) {
-          setFormError('Você não pode alterar a gestão vinculada deste usuário.');
+          setFormError('Você não pode vincular contas a outra gestão.');
           return;
         }
       } else if (currentUser.role === 'admin') {
@@ -298,7 +305,7 @@ export default function UsersPage({
               return true;
             }
             if (currentUser.role === 'diretoria_admin') {
-              return (user.role === 'diretoria' && user.managementTermId === currentUser.managementTermId) || user.id === currentUser.id;
+              return user.role === 'diretoria' && user.managementTermId === currentUser.managementTermId;
             }
             return false;
           })
@@ -496,30 +503,27 @@ export default function UsersPage({
                     <span className="text-[9px] text-slate-400 font-normal">Opcional</span>
                   )}
                 </label>
-                <select
-                  disabled={currentUser.role === 'diretoria_admin'}
-                  value={formManagementTermId}
-                  onChange={e => setFormManagementTermId(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900 font-sans disabled:opacity-75 disabled:cursor-not-allowed"
-                >
-                  {currentUser.role === 'diretoria_admin' ? (
-                    <option value={currentUser.managementTermId || ''}>
-                      {managementTerms.find(term => term.id === currentUser.managementTermId)?.name || 'Nenhuma gestão vinculada'}
-                    </option>
-                  ) : (
-                    <>
-                      <option value="">Nenhuma gestão vinculada</option>
-                      {managementTerms.map(term => (
-                        <option key={term.id} value={term.id}>
-                          {term.name} ({term.status === 'active' ? 'Ativo' : 'Arquivado'})
-                        </option>
-                      ))}
-                    </>
-                  )}
-                </select>
+                {currentUser.role === 'diretoria_admin' ? (
+                  <div className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-slate-100 font-medium text-slate-700 select-none cursor-not-allowed">
+                    Gestão vinculada: {managementTerms.find(term => term.id === currentUser.managementTermId)?.name || 'Nenhuma'}
+                  </div>
+                ) : (
+                  <select
+                    value={formManagementTermId}
+                    onChange={e => setFormManagementTermId(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900 font-sans"
+                  >
+                    <option value="">Nenhuma gestão vinculada</option>
+                    {managementTerms.map(term => (
+                      <option key={term.id} value={term.id}>
+                        {term.name} ({term.status === 'active' ? 'Ativo' : 'Arquivado'})
+                      </option>
+                    ))}
+                  </select>
+                )}
                 {currentUser.role === 'diretoria_admin' && (
-                  <p className="mt-1 text-xs text-amber-600 font-medium font-sans">
-                    Esta conta herdará automaticamente sua gestão ({managementTerms.find(term => term.id === currentUser.managementTermId)?.name || 'Nenhuma'}).
+                  <p className="mt-1.5 text-xs text-amber-600 font-medium font-sans">
+                    As contas criadas por você serão vinculadas automaticamente à sua gestão.
                   </p>
                 )}
               </div>

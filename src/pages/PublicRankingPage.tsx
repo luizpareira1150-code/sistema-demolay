@@ -21,12 +21,14 @@ interface PublicRankingPageProps {
   members: Member[];
   events: Event[];
   attendances: Attendance[];
+  isLoadingInitial?: boolean;
 }
 
 export default function PublicRankingPage({
   members,
   events,
-  attendances
+  attendances,
+  isLoadingInitial = false
 }: PublicRankingPageProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<EventCategory | 'all'>('all');
@@ -107,6 +109,28 @@ export default function PublicRankingPage({
       setSuccessMessage('');
     }, 3000);
   };
+
+  // Show an elegant, clean loading state during the initial fetch from Supabase
+  if (isLoadingInitial && !publicActiveTerm) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center font-sans text-white">
+        <div className="text-center space-y-6 animate-pulse">
+          <div className="w-16 h-16 bg-amber-500 rounded-2xl flex items-center justify-center font-extrabold text-slate-900 text-2xl mx-auto shadow-lg">
+            DM
+          </div>
+          <div className="space-y-2">
+            <h1 className="font-extrabold text-xl tracking-wider text-white uppercase font-display">
+              PAINEL DE AVALIAÇÃO DEMOLAY
+            </h1>
+            <p className="text-slate-400 text-xs font-semibold">
+              Carregando informações e classificações públicas...
+            </p>
+          </div>
+          <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
 
   // If no active term exists and no period search is yet provided: render a placeholder screen
   if (!publicActiveTerm && !isPeriodFiltering) {

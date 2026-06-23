@@ -91,7 +91,10 @@ function AppContent() {
     return cached ? getUsers() : [];
   });
 
-  const [initialSyncLoading, setInitialSyncLoading] = useState(false);
+  const [initialSyncLoading, setInitialSyncLoading] = useState(() => {
+    const cached = localStorage.getItem('demolay_members');
+    return !cached;
+  });
 
   // Navigation overrides or modal selections
   const [selectedEventForAttendance, setSelectedEventForAttendance] = useState<Event | null>(null);
@@ -106,6 +109,7 @@ function AppContent() {
 
     // Try downloading the latest from Supabase if connected
     const tryDownloadSupabase = async () => {
+      setInitialSyncLoading(true);
       try {
         const res = await downloadSupabaseToLocal();
         if (res.success && res.data) {
@@ -150,6 +154,8 @@ function AppContent() {
           setAttendances(getAttendances());
           setUsers(getUsers());
         }
+      } finally {
+        setInitialSyncLoading(false);
       }
     };
 
@@ -461,8 +467,7 @@ function AppContent() {
       }
     } else if (currentUser.role === 'diretoria_admin') {
       if (!currentUser.managementTermId) {
-        alert('Sua conta Diretoria Admin não está vinculada a uma gestão. Procure um administrador.');
-        return;
+        throw new Error('Sua conta Diretoria Admin não está vinculada a uma gestão. Procure um administrador.');
       }
       if (finalRole !== 'diretoria') {
         alert('Diretoria Admin só pode criar contas Diretoria.');
@@ -529,15 +534,11 @@ function AppContent() {
       }
     } else if (currentUser.role === 'diretoria_admin') {
       if (target.role !== 'diretoria' || target.managementTermId !== currentUser.managementTermId) {
-        alert('Ação não permitida para este perfil.');
+        alert('Você não pode editar usuários de outra gestão.');
         return;
       }
-      if (finalRole !== target.role) {
-        alert('Você não pode alterar o perfil deste usuário.');
-        return;
-      }
-      if (finalManagementTermId !== target.managementTermId) {
-        alert('Você não pode alterar a gestão vinculada deste usuário.');
+      if (finalRole !== target.role || finalManagementTermId !== target.managementTermId) {
+        alert('Você não pode alterar o perfil ou a gestão vinculada deste usuário.');
         return;
       }
       finalRole = target.role;
@@ -669,6 +670,7 @@ function AppContent() {
                 members={members}
                 events={events}
                 attendances={attendances}
+                isLoadingInitial={initialSyncLoading}
               />
             )
           }

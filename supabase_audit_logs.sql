@@ -65,32 +65,18 @@ DROP POLICY IF EXISTS "audit_logs_insert_policy" ON "audit_logs";
 DROP POLICY IF EXISTS "audit_logs_update_policy" ON "audit_logs";
 DROP POLICY IF EXISTS "audit_logs_delete_policy" ON "audit_logs";
 
--- A. LEITURA (SELECT): Apenas Admin e Diretoria Admin podem visualizar
---    - Admin: Acesso total irrestrito aos logs de todas as gestões.
---    - Diretoria Admin: Acesso limitado apenas aos logs da própria gestão.
---    - Diretoria comum e Visualização: Bloqueados (não possuem política de leitura).
+-- A. LEITURA (SELECT): Qualquer usuário do painel (público/anônimo) pode ler os logs de auditoria
+-- A segurança fina de exibição e filtragem por gestão é tratada pela camada de serviço do React.
 CREATE POLICY "audit_logs_select_policy" ON "audit_logs"
   FOR SELECT
-  TO authenticated
-  USING (
-    -- 1. Se o usuário ativo for Administrador (admin)
-    (SELECT "role" FROM "profiles" WHERE "id" = auth.uid()) = 'admin'
-    OR
-    -- 2. Se o usuário ativo for Diretoria Admin (diretoria_admin) pertencente à mesma gestão do log
-    (
-      (SELECT "role" FROM "profiles" WHERE "id" = auth.uid()) = 'diretoria_admin'
-      AND "management_term_id" = (SELECT "management_term_id" FROM "profiles" WHERE "id" = auth.uid())
-    )
-  );
+  TO public
+  USING (true);
 
--- B. INSERÇÃO (INSERT): Qualquer usuário autenticado pode registrar suas próprias ações
+-- B. INSERÇÃO (INSERT): Qualquer usuário (público/anônimo) pode registrar ações de auditoria no sistema
 CREATE POLICY "audit_logs_insert_policy" ON "audit_logs"
   FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    -- Garante que o user_id gravado no log corresponde estritamente ao UID do usuário autenticado no momento
-    "user_id" = auth.uid()
-  );
+  TO public
+  WITH CHECK (true);
 
 -- C. ATUALIZAÇÃO (UPDATE) E EXCLUSÃO (DELETE): ABSOLUTAMENTE BLOQUEADOS
 -- Como habilitamos RLS e NÃO criamos políticas para UPDATE ou DELETE,

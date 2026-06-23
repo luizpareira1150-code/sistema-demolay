@@ -679,23 +679,41 @@ export async function logAuditAction(input: AuditLogInput): Promise<void> {
 
 /**
  * Fetches audit logs from Supabase, filtered by managementTermId and ordered by created_at desc.
+ * Restricts query based on user role and their linked management term ID.
  */
-export async function fetchAuditLogs(managementTermId: string | null): Promise<{ success: boolean; data: any[]; message?: string }> {
+export async function fetchAuditLogs(
+  managementTermId: string | null,
+  currentUserRole?: string,
+  currentUserManagementTermId?: string
+): Promise<{ success: boolean; data: any[]; message?: string }> {
   try {
+    let termIdToQuery = managementTermId;
+
+    if (currentUserRole === 'diretoria_admin') {
+      if (!currentUserManagementTermId) {
+        return { 
+          success: false, 
+          data: [], 
+          message: 'Sua conta Diretoria Admin não está vinculada a uma gestão. Procure um administrador.' 
+        };
+      }
+      termIdToQuery = currentUserManagementTermId;
+    }
+
     let query = supabase
       .from(SUPABASE_TABLES.AUDIT_LOGS)
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (managementTermId) {
-      if (isValidUUID(managementTermId)) {
-        query = query.eq('management_term_id', managementTermId);
+    if (termIdToQuery) {
+      if (isValidUUID(termIdToQuery)) {
+        query = query.eq('management_term_id', termIdToQuery);
       } else {
         // If it's a local/temporary ID (not a valid UUID), return empty array
         return { success: true, data: [] };
       }
     } else {
-      // If no managementTermId is provided, we still query all (for full admins if they didn't select one, though the app usually has activeTerm).
+      // If no managementTermId is provided, and role is not diretoria_admin
     }
 
     const { data, error } = await query;

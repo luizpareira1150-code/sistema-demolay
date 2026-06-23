@@ -29,6 +29,9 @@ export default function DatabaseSyncPage({ onSyncComplete }: DatabaseSyncPagePro
       events: boolean;
       attendances: boolean;
       users: boolean;
+      photos: boolean;
+      managementTerms: boolean;
+      auditLogs: boolean;
     };
     error?: string;
   } | null>(null);
@@ -45,7 +48,7 @@ export default function DatabaseSyncPage({ onSyncComplete }: DatabaseSyncPagePro
     } catch (e: any) {
       setConnectionStatus({
         connected: false,
-        tablesStatus: { members: false, events: false, attendances: false, users: false },
+        tablesStatus: { members: false, events: false, attendances: false, users: false, photos: false, managementTerms: false, auditLogs: false },
         error: e.message || 'Erro inesperado'
       });
     } finally {
@@ -97,7 +100,15 @@ export default function DatabaseSyncPage({ onSyncComplete }: DatabaseSyncPagePro
     }
   };
 
-  const sqlScript = `-- 0. CRIAR TABELA DE GESTÕES/SEMESTRES
+  const sqlScript = `-- ==========================================
+-- SCRIPT DE ESTRUTURAÇÃO DO BANCO DE DADOS (SUPABASE)
+-- Execute no SQL Editor do seu projeto Supabase
+-- ==========================================
+
+-- 0. ATIVAR EXTENSÃO UUID
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- 1. CRIAR TABELA DE GESTÕES/SEMESTRES (management_terms)
 CREATE TABLE IF NOT EXISTS "management_terms" (
   "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   "name" TEXT NOT NULL CHECK ("name" ~ '^[0-9]{4}/[1-2]$'),
@@ -111,7 +122,7 @@ CREATE TABLE IF NOT EXISTS "management_terms" (
   CONSTRAINT "management_terms_year_semester_unique" UNIQUE ("year", "semester")
 );
 
--- 1. CRIAR TABELA DE MEMBROS
+-- 2. CRIAR TABELA DE MEMBROS (demolay_members)
 CREATE TABLE IF NOT EXISTS "demolay_members" (
   "id" TEXT PRIMARY KEY,
   "name" TEXT NOT NULL,
@@ -122,14 +133,16 @@ CREATE TABLE IF NOT EXISTS "demolay_members" (
   "degree" TEXT NOT NULL DEFAULT 'iniciatico',
   "isNominata" BOOLEAN NOT NULL DEFAULT false,
   "nominataRole" TEXT,
-  "isNominataIniciacao" BOOLEAN,
+  "isNominataIniciacao" BOOLEAN NOT NULL DEFAULT false,
   "nominataIniciacaoRole" TEXT,
-  "isNominataElevacao" BOOLEAN,
+  "isNominataElevacao" BOOLEAN NOT NULL DEFAULT false,
   "nominataElevacaoRole" TEXT,
-  "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL
+  "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL,
+  "updatedAt" TIMESTAMPTZ DEFAULT NOW(),
+  "evaluation_start_date" DATE
 );
 
--- 2. CRIAR TABELA DE EVENTOS
+-- 3. CRIAR TABELA DE EVENTOS (demolay_events)
 CREATE TABLE IF NOT EXISTS "demolay_events" (
   "id" TEXT PRIMARY KEY,
   "title" TEXT NOT NULL,
@@ -140,28 +153,130 @@ CREATE TABLE IF NOT EXISTS "demolay_events" (
   "requiredFor" JSONB NOT NULL DEFAULT '[]'::jsonb,
   "optionalFor" JSONB NOT NULL DEFAULT '[]'::jsonb,
   "nominataType" TEXT DEFAULT 'none',
-  "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL
+  "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL,
+  "updatedAt" TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. CRIAR TABELA DE PRESENÇAS / ATTENDANCE
+-- 4. CRIAR TABELA DE PRESENÇAS / ATTENDANCE
 CREATE TABLE IF NOT EXISTS "demolay_attendance" (
   "id" TEXT PRIMARY KEY,
-  "eventId" TEXT NOT NULL,
-  "memberId" TEXT NOT NULL,
+  "eventId" TEXT NOT NULL REFERENCES "demolay_events"("id") ON DELETE CASCADE,
+  "memberId" TEXT NOT NULL REFERENCES "demolay_members"("id") ON DELETE CASCADE,
   "status" TEXT NOT NULL DEFAULT 'absent',
   "note" TEXT,
-  "eligibility" TEXT,
-  "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL
+  "eligibility" TEXT DEFAULT 'not_applicable',
+  "createdAt" TEXT,
+  "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL,
+  "updatedAt" TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT "demolay_attendance_event_member_unique" UNIQUE ("eventId", "memberId")
 );
 
--- 4. CRIAR TABELA DE USUÁRIOS
+-- 5. CRIAR TABELA DE USUÁRIOS
 CREATE TABLE IF NOT EXISTS "demolay_users" (
   "id" TEXT PRIMARY KEY,
   "name" TEXT NOT NULL,
   "email" TEXT NOT NULL,
   "password" TEXT NOT NULL,
-  "role" TEXT NOT NULL DEFAULT 'visualizacao'
-);`;
+  "role" TEXT NOT NULL DEFAULT 'visualizacao',
+  "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL,
+  "created_by" TEXT,
+  "createdAt" TIMESTAMPTZ DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 6. CRIAR TABELA DE FOTOS DE COMPROVAÇÃO
+CREATE TABLE IF NOT EXISTS "demolay_event_photos" (
+  "id" TEXT PRIMARY KEY,
+  "eventId" TEXT NOT NULL REFERENCES "demolay_events"("id") ON DELETE CASCADE,
+  "photo" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 7. CRIAR TABELA DE CONFIGURAÇÕES DO SISTEMA
+CREATE TABLE IF NOT EXISTS "system_settings" (
+  "id" TEXT PRIMARY KEY DEFAULT 'current',
+  "plusWeight" NUMERIC NOT NULL DEFAULT 0.5,
+  "greenThreshold" INTEGER NOT NULL DEFAULT 70,
+  "yellowThreshold" INTEGER NOT NULL DEFAULT 60,
+  "updatedAt" TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Inserir configuração padrão
+INSERT INTO "system_settings" ("id", "plusWeight", "greenThreshold", "yellowThreshold")
+VALUES ('current', 0.5, 70, 60)
+ON CONFLICT ("id") DO NOTHING;
+
+-- 8. CRIAR TABELA DE LOGS DE AUDITORIA (audit_logs)
+CREATE TABLE IF NOT EXISTS "audit_logs" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL,
+  "user_id" UUID,
+  "user_name" TEXT,
+  "user_role" TEXT,
+  "action" TEXT NOT NULL,
+  "entity_type" TEXT NOT NULL,
+  "entity_id" UUID,
+  "entity_name" TEXT,
+  "description" TEXT NOT NULL,
+  "old_data" JSONB,
+  "new_data" JSONB,
+  "metadata" JSONB,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ==========================================
+-- CONFIGURAÇÃO DE ROW LEVEL SECURITY (RLS) & POLÍTICAS PÚBLICAS
+-- ==========================================
+ALTER TABLE "demolay_members" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "demolay_events" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "demolay_attendance" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "demolay_users" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "demolay_event_photos" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "management_terms" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "system_settings" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "audit_logs" ENABLE ROW LEVEL SECURITY;
+
+-- Remover políticas se existirem para evitar conflitos
+DROP POLICY IF EXISTS "Leitura pública livre" ON "demolay_members";
+DROP POLICY IF EXISTS "Leitura pública livre" ON "demolay_events";
+DROP POLICY IF EXISTS "Leitura pública livre" ON "demolay_attendance";
+DROP POLICY IF EXISTS "Leitura pública livre" ON "demolay_event_photos";
+DROP POLICY IF EXISTS "Leitura pública livre" ON "management_terms";
+DROP POLICY IF EXISTS "Leitura pública livre" ON "system_settings";
+
+DROP POLICY IF EXISTS "Escrita para autenticados" ON "demolay_members";
+DROP POLICY IF EXISTS "Escrita para autenticados" ON "demolay_events";
+DROP POLICY IF EXISTS "Escrita para autenticados" ON "demolay_attendance";
+DROP POLICY IF EXISTS "Escrita para autenticados" ON "demolay_users";
+DROP POLICY IF EXISTS "Escrita para autenticados" ON "demolay_event_photos";
+DROP POLICY IF EXISTS "Escrita para autenticados" ON "management_terms";
+DROP POLICY IF EXISTS "Configurações atualizáveis por autenticados" ON "system_settings";
+
+DROP POLICY IF EXISTS "Inserção de LOGS para todos" ON "audit_logs";
+DROP POLICY IF EXISTS "Visualização de LOGS para todos" ON "audit_logs";
+DROP POLICY IF EXISTS "audit_logs_select_policy" ON "audit_logs";
+DROP POLICY IF EXISTS "audit_logs_insert_policy" ON "audit_logs";
+
+-- Políticas de Leitura Pública
+CREATE POLICY "Leitura pública livre" ON "demolay_members" FOR SELECT USING (true);
+CREATE POLICY "Leitura pública livre" ON "demolay_events" FOR SELECT USING (true);
+CREATE POLICY "Leitura pública livre" ON "demolay_attendance" FOR SELECT USING (true);
+CREATE POLICY "Leitura pública livre" ON "demolay_event_photos" FOR SELECT USING (true);
+CREATE POLICY "Leitura pública livre" ON "management_terms" FOR SELECT USING (true);
+CREATE POLICY "Leitura pública livre" ON "system_settings" FOR SELECT USING (true);
+
+-- Políticas de Escrita Segura (Permite inserção anônima/pública do App)
+CREATE POLICY "Escrita para autenticados" ON "demolay_members" FOR ALL TO public USING (true) WITH CHECK (true);
+CREATE POLICY "Escrita para autenticados" ON "demolay_events" FOR ALL TO public USING (true) WITH CHECK (true);
+CREATE POLICY "Escrita para autenticados" ON "demolay_attendance" FOR ALL TO public USING (true) WITH CHECK (true);
+CREATE POLICY "Escrita para autenticados" ON "demolay_users" FOR ALL TO public USING (true) WITH CHECK (true);
+CREATE POLICY "Escrita para autenticados" ON "demolay_event_photos" FOR ALL TO public USING (true) WITH CHECK (true);
+CREATE POLICY "Escrita para autenticados" ON "management_terms" FOR ALL TO public USING (true) WITH CHECK (true);
+CREATE POLICY "Configurações atualizáveis por autenticados" ON "system_settings" FOR UPDATE TO public USING (true);
+
+-- Políticas Corrigidas para LOGS de Auditoria (Essencial para a aba Auditoria funcionar!)
+CREATE POLICY "Inserção de LOGS para todos" ON "audit_logs" FOR INSERT TO public WITH CHECK (true);
+CREATE POLICY "Visualização de LOGS para todos" ON "audit_logs" FOR SELECT TO public USING (true);`;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(sqlScript);
@@ -280,6 +395,28 @@ CREATE TABLE IF NOT EXISTS "demolay_users" (
                 {checking ? (
                   <span className="text-slate-400">...</span>
                 ) : connectionStatus?.tablesStatus.users ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Ativa</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] bg-rose-50 text-rose-750 px-1.5 py-0.5 rounded font-bold">Inativa</span>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-150">
+                <span className="font-mono text-[11px]">management_terms</span>
+                {checking ? (
+                  <span className="text-slate-400">...</span>
+                ) : connectionStatus?.tablesStatus.managementTerms ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Ativa</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] bg-rose-50 text-rose-750 px-1.5 py-0.5 rounded font-bold">Inativa</span>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-150">
+                <span className="font-mono text-[11px]">audit_logs</span>
+                {checking ? (
+                  <span className="text-slate-400">...</span>
+                ) : connectionStatus?.tablesStatus.auditLogs ? (
                   <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Ativa</span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-[10px] bg-rose-50 text-rose-750 px-1.5 py-0.5 rounded font-bold">Inativa</span>

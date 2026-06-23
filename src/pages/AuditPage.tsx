@@ -40,6 +40,13 @@ export default function AuditPage({ currentUser }: AuditPageProps) {
     : activeTerm?.id;
 
   const loadLogs = async () => {
+    if (currentUser.role === 'diretoria_admin' && !currentUser.managementTermId) {
+      setLogs([]);
+      setError('Sua conta Diretoria Admin não está vinculada a uma gestão. Procure um administrador.');
+      setLoading(false);
+      return;
+    }
+
     if (!effectiveTermId) {
       setLogs([]);
       setLoading(false);
@@ -47,7 +54,7 @@ export default function AuditPage({ currentUser }: AuditPageProps) {
     }
     setLoading(true);
     setError(null);
-    const res = await fetchAuditLogs(effectiveTermId);
+    const res = await fetchAuditLogs(effectiveTermId, currentUser.role, currentUser.managementTermId);
     if (res.success) {
       setLogs(res.data);
     } else {
@@ -67,6 +74,19 @@ export default function AuditPage({ currentUser }: AuditPageProps) {
         <AlertCircle className="h-12 w-12 text-rose-500 mb-4 animate-bounce" />
         <h3 className="text-lg font-bold text-slate-800">Acesso Negado</h3>
         <p className="text-sm text-slate-500 mt-1">Ação não permitida para este perfil.</p>
+      </div>
+    );
+  }
+
+  // Check if diretoria_admin without term
+  if (currentUser.role === 'diretoria_admin' && !currentUser.managementTermId) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 bg-white rounded-xl shadow-xs border border-slate-200 text-center">
+        <AlertCircle className="h-12 w-12 text-amber-500 mb-4 animate-pulse" />
+        <h3 className="text-lg font-bold text-slate-800">Sem Gestão Vinculada</h3>
+        <p className="text-sm text-slate-600 mt-2 max-w-md font-medium">
+          Sua conta Diretoria Admin não está vinculada a uma gestão. Procure um administrador.
+        </p>
       </div>
     );
   }
@@ -181,6 +201,18 @@ export default function AuditPage({ currentUser }: AuditPageProps) {
 
   return (
     <div className="space-y-6">
+      {currentUser.role === 'diretoria_admin' && (
+        <div className="bg-indigo-50 border border-indigo-150 rounded-xl p-4 flex items-start gap-3 shadow-xs animate-in fade-in duration-150">
+          <AlertCircle className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
+          <div>
+            <h4 className="text-sm font-bold text-indigo-900">Auditoria da sua gestão vinculada</h4>
+            <p className="text-xs text-indigo-750 mt-0.5 leading-relaxed font-medium">
+              Você está visualizando apenas os registros da gestão vinculada à sua conta.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Filters Card */}
       <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-5">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-100">

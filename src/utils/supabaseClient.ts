@@ -50,6 +50,8 @@ export async function checkSupabaseConnection(): Promise<{
     attendances: boolean;
     users: boolean;
     photos: boolean;
+    managementTerms: boolean;
+    auditLogs: boolean;
   };
   error?: string;
 }> {
@@ -58,7 +60,9 @@ export async function checkSupabaseConnection(): Promise<{
     events: false,
     attendances: false,
     users: false,
-    photos: false
+    photos: false,
+    managementTerms: false,
+    auditLogs: false
   };
 
   try {
@@ -82,18 +86,28 @@ export async function checkSupabaseConnection(): Promise<{
     const photosCheck = await supabase.from(SUPABASE_TABLES.PHOTOS).select('id').limit(1);
     status.photos = !photosCheck.error;
 
-    const connected = status.members && status.events && status.attendances && status.users;
+    // Check management terms
+    const termsCheck = await supabase.from(SUPABASE_TABLES.MANAGEMENT_TERMS).select('id').limit(1);
+    status.managementTerms = !termsCheck.error;
+
+    // Check audit logs
+    const auditCheck = await supabase.from(SUPABASE_TABLES.AUDIT_LOGS).select('id').limit(1);
+    status.auditLogs = !auditCheck.error;
+
+    const connected = status.members && status.events && status.attendances && status.users && status.managementTerms && status.auditLogs;
 
     return {
       connected,
       tablesStatus: status,
-      error: (!membersCheck.error && !eventsCheck.error && !attendancesCheck.error && !usersCheck.error) 
+      error: (!membersCheck.error && !eventsCheck.error && !attendancesCheck.error && !usersCheck.error && !termsCheck.error && !auditCheck.error) 
         ? undefined 
         : `Tabelas ausentes ou sem permissão: ${[
             membersCheck.error ? 'demolay_members' : '',
             eventsCheck.error ? 'demolay_events' : '',
             attendancesCheck.error ? 'demolay_attendance' : '',
-            usersCheck.error ? 'demolay_users' : ''
+            usersCheck.error ? 'demolay_users' : '',
+            termsCheck.error ? 'management_terms' : '',
+            auditCheck.error ? 'audit_logs' : ''
           ].filter(Boolean).join(', ')}`
     };
   } catch (err: any) {
