@@ -166,17 +166,25 @@ export async function pushUserToSupabase(user: User): Promise<void> {
       email: user.email,
       password: user.password,
       role: user.role,
-      management_term_id: user.managementTermId,
-      created_by: user.createdBy
+      management_term_id: user.managementTermId || null,
+      created_by: user.createdBy || null
     };
 
     let { error } = await supabase
       .from(SUPABASE_TABLES.USERS)
       .upsert(payload);
 
-    // Se o erro for de coluna inexistente para 'created_by' (PGRST204 ou similar), tenta sem ela
-    if (error && (error.message.includes('created_by') || error.message.includes('column') || error.message.includes('schema cache'))) {
-      console.warn('Tentando salvar usuário sem a coluna "created_by" no Supabase...');
+    // Se houver erro relacionado ao campo 'created_by' (coluna inexistente ou chave estrangeira violada)
+    if (error && (
+      error.message.includes('created_by') || 
+      error.message.includes('column') || 
+      error.message.includes('schema cache') ||
+      error.message.includes('foreign key') || 
+      error.message.includes('constraint') ||
+      error.code === '23503' ||
+      error.code === 'PGRST204'
+    )) {
+      console.warn('Falha ao salvar usuário com "created_by". Tentando sem este campo...');
       const { created_by, ...payloadWithoutCreatedBy } = payload;
       const retryResult = await supabase
         .from(SUPABASE_TABLES.USERS)
@@ -184,7 +192,33 @@ export async function pushUserToSupabase(user: User): Promise<void> {
       error = retryResult.error;
     }
 
-    if (error) console.warn('Erro ao salvar usuário no Supabase:', error.message);
+    // Se ainda houver erro de chave estrangeira (por exemplo, em management_term_id) e o perfil não for Diretoria, tenta sem ela
+    if (error && user.role !== 'diretoria' && (
+      error.message.includes('management_term') ||
+      error.message.includes('foreign key') ||
+      error.code === '23503'
+    )) {
+      console.warn('Falha persistente do banco. Tentando salvar sem campos de relacionamento...');
+      const cleanPayload = {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        password: user.password,
+        role: user.role,
+        management_term_id: null,
+        created_by: null
+      };
+      const retryResult = await supabase
+        .from(SUPABASE_TABLES.USERS)
+        .upsert(cleanPayload);
+      error = retryResult.error;
+    }
+
+    if (error) {
+      console.warn('Erro definitivo ao salvar usuário no Supabase:', error.message, error.code);
+    } else {
+      console.log(`Usuário ${user.email} salvo com sucesso no Supabase.`);
+    }
   } catch (err) {
     console.warn('Erro de rede ao salvar usuário no Supabase:', err);
   }
@@ -320,16 +354,41 @@ export async function uploadLocalToSupabase(): Promise<{ success: boolean; messa
         email: user.email,
         password: user.password,
         role: user.role,
-        management_term_id: user.managementTermId,
-        created_by: user.createdBy
+        management_term_id: user.managementTermId || null,
+        created_by: user.createdBy || null
       }));
       let { error } = await supabase.from(SUPABASE_TABLES.USERS).upsert(rows);
 
-      // Se o erro for de coluna inexistente para 'created_by' (PGRST204 ou similar), tenta sem ela
-      if (error && (error.message.includes('created_by') || error.message.includes('column') || error.message.includes('schema cache'))) {
+      // Se houver erro relacionado ao campo 'created_by' (coluna inexistente ou chave estrangeira violada)
+      if (error && (
+        error.message.includes('created_by') || 
+        error.message.includes('column') || 
+        error.message.includes('schema cache') ||
+        error.message.includes('foreign key') || 
+        error.message.includes('constraint') ||
+        error.code === '23503' ||
+        error.code === 'PGRST204'
+      )) {
         console.warn('Tentando sincronização em lote de usuários sem a coluna "created_by"...');
         const rowsWithoutCreatedBy = rows.map(({ created_by, ...rest }) => rest);
         const retryResult = await supabase.from(SUPABASE_TABLES.USERS).upsert(rowsWithoutCreatedBy);
+        error = retryResult.error;
+      }
+
+      // Se houver erro de chave estrangeira nas gestões para usuários normais, tenta sem relacionamentos
+      if (error && rows.some(r => r.role !== 'diretoria') && (
+        error.message.includes('management_term') ||
+        error.message.includes('foreign key') ||
+        error.code === '23503'
+      )) {
+        console.warn('Tentando sincronização em lote limpando chaves estrangeiras de usuários não-diretoria...');
+        const rowsCleaned = rows.map(r => {
+          if (r.role !== 'diretoria') {
+            return { ...r, management_term_id: null, created_by: null };
+          }
+          return r;
+        });
+        const retryResult = await supabase.from(SUPABASE_TABLES.USERS).upsert(rowsCleaned);
         error = retryResult.error;
       }
 
