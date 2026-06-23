@@ -160,17 +160,30 @@ export async function pushAttendancesToSupabase(attendances: Attendance[]): Prom
  */
 export async function pushUserToSupabase(user: User): Promise<void> {
   try {
-    const { error } = await supabase
+    const payload: any = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      password: user.password,
+      role: user.role,
+      management_term_id: user.managementTermId,
+      created_by: user.createdBy
+    };
+
+    let { error } = await supabase
       .from(SUPABASE_TABLES.USERS)
-      .upsert({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        password: user.password,
-        role: user.role,
-        management_term_id: user.managementTermId,
-        created_by: user.createdBy
-      });
+      .upsert(payload);
+
+    // Se o erro for de coluna inexistente para 'created_by' (PGRST204 ou similar), tenta sem ela
+    if (error && (error.message.includes('created_by') || error.message.includes('column') || error.message.includes('schema cache'))) {
+      console.warn('Tentando salvar usuário sem a coluna "created_by" no Supabase...');
+      const { created_by, ...payloadWithoutCreatedBy } = payload;
+      const retryResult = await supabase
+        .from(SUPABASE_TABLES.USERS)
+        .upsert(payloadWithoutCreatedBy);
+      error = retryResult.error;
+    }
+
     if (error) console.warn('Erro ao salvar usuário no Supabase:', error.message);
   } catch (err) {
     console.warn('Erro de rede ao salvar usuário no Supabase:', err);
@@ -310,7 +323,16 @@ export async function uploadLocalToSupabase(): Promise<{ success: boolean; messa
         management_term_id: user.managementTermId,
         created_by: user.createdBy
       }));
-      const { error } = await supabase.from(SUPABASE_TABLES.USERS).upsert(rows);
+      let { error } = await supabase.from(SUPABASE_TABLES.USERS).upsert(rows);
+
+      // Se o erro for de coluna inexistente para 'created_by' (PGRST204 ou similar), tenta sem ela
+      if (error && (error.message.includes('created_by') || error.message.includes('column') || error.message.includes('schema cache'))) {
+        console.warn('Tentando sincronização em lote de usuários sem a coluna "created_by"...');
+        const rowsWithoutCreatedBy = rows.map(({ created_by, ...rest }) => rest);
+        const retryResult = await supabase.from(SUPABASE_TABLES.USERS).upsert(rowsWithoutCreatedBy);
+        error = retryResult.error;
+      }
+
       if (error) throw new Error(`Usuários: ${error.message}`);
     }
 

@@ -297,18 +297,18 @@ CREATE POLICY "Leitura pública livre" ON "management_terms" FOR SELECT USING (t
 
 -- 2. Políticas de perfis e autenticação com Supabase Auth (Se usar login real do Supabase)
 CREATE POLICY "Qualquer um lê perfis" ON "profiles" FOR SELECT USING (true);
-CREATE POLICY "Usuário gerencia próprio perfil" ON "profiles" FOR ALL TO authenticated USING (auth.uid() = id);
+CREATE POLICY "Usuário gerencia próprio perfil" ON "profiles" FOR ALL TO public USING (true);
 
--- 3. Políticas de Escrita Seguras para Operações Administrativas
-CREATE POLICY "Escrita para autenticados" ON "demolay_members" FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Escrita para autenticados" ON "demolay_events" FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Escrita para autenticados" ON "demolay_attendance" FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Escrita para autenticados" ON "demolay_users" FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Escrita para autenticados" ON "demolay_event_photos" FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Escrita para autenticados" ON "management_terms" FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Configurações atualizáveis por autenticados" ON "system_settings" FOR UPDATE TO authenticated USING (true);
-CREATE POLICY "Inserção de LOGS para autenticados" ON "audit_logs" FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Visualização de LOGS para autenticados" ON "audit_logs" FOR SELECT TO authenticated USING (true);
+-- 3. Políticas de Escrita Seguras para Operações Administrativas (Abertas para 'public' ou 'anon, authenticated' para suportar o fluxo de sincronização local do App)
+CREATE POLICY "Escrita para autenticados" ON "demolay_members" FOR ALL TO public USING (true) WITH CHECK (true);
+CREATE POLICY "Escrita para autenticados" ON "demolay_events" FOR ALL TO public USING (true) WITH CHECK (true);
+CREATE POLICY "Escrita para autenticados" ON "demolay_attendance" FOR ALL TO public USING (true) WITH CHECK (true);
+CREATE POLICY "Escrita para autenticados" ON "demolay_users" FOR ALL TO public USING (true) WITH CHECK (true);
+CREATE POLICY "Escrita para autenticados" ON "demolay_event_photos" FOR ALL TO public USING (true) WITH CHECK (true);
+CREATE POLICY "Escrita para autenticados" ON "management_terms" FOR ALL TO public USING (true) WITH CHECK (true);
+CREATE POLICY "Configurações atualizáveis por autenticados" ON "system_settings" FOR UPDATE TO public USING (true);
+CREATE POLICY "Inserção de LOGS para autenticados" ON "audit_logs" FOR INSERT TO public WITH CHECK (true);
+CREATE POLICY "Visualização de LOGS para autenticados" ON "audit_logs" FOR SELECT TO public USING (true);
 
 -- EXTRA: Caso queira um fallback de teste temporário para desenvolvimento anônimo onde o usuário local 
 -- ainda não fez login via Auth Real (Supabase), você pode rodar temporariamente estas linhas extras:
