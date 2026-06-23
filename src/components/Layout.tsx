@@ -15,10 +15,15 @@ import {
   X,
   Database,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Eye,
+  Wifi,
+  WifiOff,
+  RefreshCw
 } from 'lucide-react';
 import { User } from '../types';
 import { canEditCurrentManagementTerm } from '../utils/permission';
+import { useRealtimeSync } from '../contexts/RealtimeContext';
 
 interface LayoutProps {
   currentUser: User;
@@ -37,18 +42,51 @@ export default function Layout({
 }: LayoutProps) {
   const navigate = useNavigate();
   const { activeTerm } = useManagementTerm();
+  const { status } = useRealtimeSync();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const renderRealtimeBadge = (isMobile: boolean = false) => {
+    switch (status) {
+      case 'connecting':
+        return (
+          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 animate-pulse ${isMobile ? 'text-[10px]' : ''}`}>
+            <RefreshCw className="h-3 w-3 animate-spin text-amber-500" />
+            <span>Atualizando...</span>
+          </div>
+        );
+      case 'connected':
+        return (
+          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-100 ${isMobile ? 'text-[10px]' : ''}`}>
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+            </span>
+            <span>Sincronizado</span>
+          </div>
+        );
+      case 'error':
+        return (
+          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200 ${isMobile ? 'text-[10px]' : ''}`}>
+            <WifiOff className="h-3 w-3 text-rose-500" />
+            <span>Conexão Offline</span>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'diretoria', 'visualizacao'] },
-    { id: 'membros', label: 'Membros', icon: Users, roles: ['admin', 'diretoria', 'visualizacao'] },
-    { id: 'nominata', label: 'Nominatas', icon: Shield, roles: ['admin', 'diretoria', 'visualizacao'] },
-    { id: 'eventos', label: 'Eventos', icon: Calendar, roles: ['admin', 'diretoria', 'visualizacao'] },
-    { id: 'presencas', label: 'Presenças', icon: CheckSquare, roles: ['admin', 'diretoria', 'visualizacao'] }, 
-    { id: 'classificacao', label: 'Classificação', icon: Trophy, roles: ['admin', 'diretoria', 'visualizacao'] },
-    { id: 'relatorios', label: 'Relatórios', icon: FileText, roles: ['admin', 'diretoria', 'visualizacao'] },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'diretoria_admin', 'diretoria', 'visualizacao'] },
+    { id: 'membros', label: 'Membros', icon: Users, roles: ['admin', 'diretoria_admin', 'diretoria', 'visualizacao'] },
+    { id: 'nominata', label: 'Nominatas', icon: Shield, roles: ['admin', 'diretoria_admin', 'diretoria', 'visualizacao'] },
+    { id: 'eventos', label: 'Eventos', icon: Calendar, roles: ['admin', 'diretoria_admin', 'diretoria', 'visualizacao'] },
+    { id: 'presencas', label: 'Presenças', icon: CheckSquare, roles: ['admin', 'diretoria_admin', 'diretoria', 'visualizacao'] }, 
+    { id: 'classificacao', label: 'Classificação', icon: Trophy, roles: ['admin', 'diretoria_admin', 'diretoria', 'visualizacao'] },
+    { id: 'relatorios', label: 'Relatórios', icon: FileText, roles: ['admin', 'diretoria_admin', 'diretoria', 'visualizacao'] },
+    { id: 'auditoria', label: 'Auditoria', icon: Eye, roles: ['admin', 'diretoria_admin'] },
     { id: 'database', label: 'Banco Supabase', icon: Database, roles: ['admin'] },
-    { id: 'usuarios', label: 'Usuários', icon: UserCircle, roles: ['admin', 'diretoria'] },
+    { id: 'usuarios', label: 'Usuários', icon: UserCircle, roles: ['admin', 'diretoria_admin'] },
     { id: 'gestoes', label: 'Gestões', icon: Calendar, roles: ['admin'] }
   ];
 
@@ -58,6 +96,8 @@ export default function Layout({
     switch (role) {
       case 'admin':
         return { label: 'Administrador', classes: 'bg-red-100 text-red-800 border-red-200' };
+      case 'diretoria_admin':
+        return { label: 'Diretoria Admin', classes: 'bg-orange-100 text-orange-800 border-orange-200' };
       case 'diretoria':
         return { label: 'Diretoria', classes: 'bg-blue-100 text-blue-800 border-blue-200' };
       default:
@@ -136,12 +176,15 @@ export default function Layout({
             PAAD - DeMolay
           </h2>
         </div>
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="p-1.5 rounded-lg bg-slate-800 text-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-500"
-        >
-          {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        <div className="flex items-center gap-3">
+          {renderRealtimeBadge(true)}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-1.5 rounded-lg bg-slate-800 text-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-500"
+          >
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </header>
 
       {/* Mobile Menu Backdrop & Drawer */}
@@ -233,7 +276,7 @@ export default function Layout({
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Desktop Header containing active view title and metadata */}
         <header className="no-print hidden md:flex items-center justify-between px-8 bg-white border-b border-slate-200 h-16 shrink-0 select-none">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <h2 className="text-lg font-bold text-slate-800 font-display capitalize">
               {
                 activeTab === 'dashboard' ? 'Dashboard' :
@@ -243,12 +286,14 @@ export default function Layout({
                 activeTab === 'presencas' ? 'Presenças' :
                 activeTab === 'classificacao' ? 'Classificação' :
                 activeTab === 'relatorios' ? 'Relatórios' :
+                activeTab === 'auditoria' ? 'Auditoria' :
                 activeTab === 'usuarios' ? 'Usuários' :
                 activeTab === 'gestoes' ? 'Gestões' :
                 activeTab
               }
             </h2>
             <span className="text-slate-400 text-xs font-medium">• Gestão de Presença Capítulo</span>
+            {renderRealtimeBadge(false)}
           </div>
           <div className="flex items-center gap-4">
             {activeTerm && (

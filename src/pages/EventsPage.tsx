@@ -39,8 +39,8 @@ export default function EventsPage({
   const canEditTerm = canEditCurrentManagementTerm(currentUser, activeTerm);
 
   // Permission checks
-  const canModify = (currentUser.role === 'admin' || currentUser.role === 'diretoria') && canEditTerm;
-  const canDelete = (currentUser.role === 'admin' || currentUser.role === 'diretoria') && canEditTerm;
+  const canModify = (currentUser.role === 'admin' || currentUser.role === 'diretoria' || currentUser.role === 'diretoria_admin') && canEditTerm;
+  const canDelete = (currentUser.role === 'admin' || currentUser.role === 'diretoria' || currentUser.role === 'diretoria_admin') && canEditTerm;
 
   // Filters state
   const [categoryFilter, setCategoryFilter] = useState<EventCategory | 'all'>('all');

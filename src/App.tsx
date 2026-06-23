@@ -28,10 +28,12 @@ import PublicRankingPage from './pages/PublicRankingPage';
 import DatabaseSyncPage from './pages/DatabaseSyncPage';
 import ManagementTermsPage from './pages/ManagementTermsPage';
 import SelectManagementTermPage from './pages/SelectManagementTermPage';
+import AuditPage from './pages/AuditPage';
 import { ManagementTermProvider, useManagementTerm } from './contexts/ManagementTermContext';
+import { RealtimeProvider } from './contexts/RealtimeContext';
 
 // Import Supabase Integration triggers and sync helpers
-import { checkSupabaseConnection } from './utils/supabaseClient';
+import { checkSupabaseConnection, supabase } from './utils/supabaseClient';
 import { 
   downloadSupabaseToLocal,
   pushMemberToSupabase, 
@@ -42,7 +44,8 @@ import {
   deleteAttendancesByMemberId,
   pushAttendancesToSupabase,
   pushUserToSupabase,
-  deleteUserFromSupabase
+  deleteUserFromSupabase,
+  logAuditAction
 } from './utils/supabaseService';
 
 // Import Components
@@ -154,6 +157,40 @@ function AppContent() {
     tryDownloadSupabase();
   }, []);
 
+  // Handler for Realtime notifications to refresh shared states
+  const handleSyncFromSupabase = async () => {
+    console.log('[Realtime-Sync] Sincronizando dados locais com o Supabase...');
+    try {
+      const res = await downloadSupabaseToLocal();
+      if (res.success && res.data) {
+        setMembers(res.data.members);
+        setEvents(res.data.events);
+        setAttendances(res.data.attendances);
+        setUsers(res.data.users);
+
+        // Se o próprio usuário logado tiver seu profile alterado, recarregar profile e permissões
+        if (currentUser) {
+          const updatedSelf = res.data.users.find(u => u.id === currentUser.id);
+          if (updatedSelf) {
+            const hasRoleChanged = updatedSelf.role !== currentUser.role;
+            const hasTermChanged = updatedSelf.managementTermId !== currentUser.managementTermId;
+            const hasNameChanged = updatedSelf.name !== currentUser.name;
+
+            if (hasRoleChanged || hasTermChanged || hasNameChanged) {
+              console.log('[Realtime-Sync] O perfil do próprio usuário conectado foi alterado via Realtime! Recarregando permissões...');
+              setCurrentUser(updatedSelf);
+              saveCurrentUser(updatedSelf);
+            }
+          }
+        }
+
+        console.log('[Realtime-Sync] Sincronização e atualização de estados concluída com sucesso!');
+      }
+    } catch (err) {
+      console.warn('[Realtime-Sync] Erro ao sincronizar após atualização em tempo real:', err);
+    }
+  };
+
   // 2. Auth handlers
   const handleLoginSuccess = (user: User) => {
     setCurrentUser(user);
@@ -179,6 +216,21 @@ function AppContent() {
     setMembers(updated);
     saveMembers(updated);
     pushMemberToSupabase(created); // Background cloud push
+
+    if (currentUser) {
+      logAuditAction({
+        managementTermId: created.managementTermId || null,
+        userId: currentUser.id,
+        userName: currentUser.name || currentUser.email,
+        userRole: currentUser.role,
+        action: 'created',
+        entityType: 'member',
+        entityId: created.id,
+        entityName: created.name,
+        description: `${currentUser.name || currentUser.email} criou o membro ${created.name}`,
+        newData: created
+      });
+    }
   };
 
   const handleUpdateMember = (updatedMember: Member) => {
@@ -186,13 +238,34 @@ function AppContent() {
       ...updatedMember,
       managementTermId: updatedMember.managementTermId || activeTerm?.id || undefined
     };
+    const oldMember = members.find(m => m.id === created.id);
     const updated = members.map(m => (m.id === created.id ? created : m));
     setMembers(updated);
     saveMembers(updated);
     pushMemberToSupabase(created); // Background cloud push
+
+    if (currentUser) {
+      logAuditAction({
+        managementTermId: created.managementTermId || null,
+        userId: currentUser.id,
+        userName: currentUser.name || currentUser.email,
+        userRole: currentUser.role,
+        action: 'updated',
+        entityType: 'member',
+        entityId: created.id,
+        entityName: created.name,
+        description: `${currentUser.name || currentUser.email} atualizou o membro ${created.name}`,
+        oldData: oldMember || null,
+        newData: created
+      });
+    }
   };
 
   const handleDeleteMember = (id: string) => {
+    const target = members.find(m => m.id === id);
+    const memberName = target ? target.name : 'Membro';
+    const memberTermId = target?.managementTermId || activeTerm?.id || null;
+
     // 1. Remove member
     const updatedMembers = members.filter(m => m.id !== id);
     setMembers(updatedMembers);
@@ -204,6 +277,21 @@ function AppContent() {
     setAttendances(updatedAttendances);
     saveAttendances(updatedAttendances);
     deleteAttendancesByMemberId(id); // Background cascade delete
+
+    if (currentUser) {
+      logAuditAction({
+        managementTermId: memberTermId,
+        userId: currentUser.id,
+        userName: currentUser.name || currentUser.email,
+        userRole: currentUser.role,
+        action: 'deleted',
+        entityType: 'member',
+        entityId: id,
+        entityName: memberName,
+        description: `${currentUser.name || currentUser.email} excluiu o membro ${memberName}`,
+        oldData: target || null
+      });
+    }
   };
 
   // 4. Event CRUD triggers with Supabase Sync
@@ -218,6 +306,21 @@ function AppContent() {
     setEvents(updated);
     saveEvents(updated);
     pushEventToSupabase(created); // Background cloud push
+
+    if (currentUser) {
+      logAuditAction({
+        managementTermId: created.managementTermId || null,
+        userId: currentUser.id,
+        userName: currentUser.name || currentUser.email,
+        userRole: currentUser.role,
+        action: 'created',
+        entityType: 'event',
+        entityId: created.id,
+        entityName: created.title,
+        description: `${currentUser.name || currentUser.email} criou o evento ${created.title}`,
+        newData: created
+      });
+    }
   };
 
   const handleUpdateEvent = (updatedEvent: Event) => {
@@ -225,13 +328,34 @@ function AppContent() {
       ...updatedEvent,
       managementTermId: updatedEvent.managementTermId || activeTerm?.id || undefined
     };
+    const oldEvent = events.find(e => e.id === created.id);
     const updated = events.map(e => (e.id === created.id ? created : e));
     setEvents(updated);
     saveEvents(updated);
     pushEventToSupabase(created); // Background cloud push
+
+    if (currentUser) {
+      logAuditAction({
+        managementTermId: created.managementTermId || null,
+        userId: currentUser.id,
+        userName: currentUser.name || currentUser.email,
+        userRole: currentUser.role,
+        action: 'updated',
+        entityType: 'event',
+        entityId: created.id,
+        entityName: created.title,
+        description: `${currentUser.name || currentUser.email} atualizou o evento ${created.title}`,
+        oldData: oldEvent || null,
+        newData: created
+      });
+    }
   };
 
   const handleDeleteEvent = (id: string) => {
+    const target = events.find(e => e.id === id);
+    const eventTitle = target ? target.title : 'Evento';
+    const eventTermId = target?.managementTermId || activeTerm?.id || null;
+
     // 1. Remove event
     const updatedEvents = events.filter(e => e.id !== id);
     setEvents(updatedEvents);
@@ -243,6 +367,21 @@ function AppContent() {
     setAttendances(updatedAttendances);
     saveAttendances(updatedAttendances);
     deleteAttendancesByEventId(id); // Background cascade delete
+
+    if (currentUser) {
+      logAuditAction({
+        managementTermId: eventTermId,
+        userId: currentUser.id,
+        userName: currentUser.name || currentUser.email,
+        userRole: currentUser.role,
+        action: 'deleted',
+        entityType: 'event',
+        entityId: id,
+        entityName: eventTitle,
+        description: `${currentUser.name || currentUser.email} excluiu o evento ${eventTitle}`,
+        oldData: target || null
+      });
+    }
   };
 
   // 5. Save Event attendance marks with Supabase Sync
@@ -267,6 +406,39 @@ function AppContent() {
         pushAttendancesToSupabase(appendList);
       }
     });
+
+    if (currentUser) {
+      const targetEvent = events.find(e => e.id === eventId);
+      const eventTitle = targetEvent ? targetEvent.title : 'Evento';
+      const eventTermId = targetEvent?.managementTermId || activeTerm?.id || null;
+
+      const countPresent = updatedList.filter(a => a.status === 'present').length;
+      const countAbsent = updatedList.filter(a => a.status === 'absent').length;
+      const countJustified = updatedList.filter(a => a.status === 'justified').length;
+      const countExtras = updatedList.filter(a => a.eligibility === 'optional' && a.status === 'present').length;
+      const countNotApplicable = updatedList.filter(a => a.status === 'not_applicable').length;
+      const totalCount = updatedList.length;
+
+      logAuditAction({
+        managementTermId: eventTermId,
+        userId: currentUser.id,
+        userName: currentUser.name || currentUser.email,
+        userRole: currentUser.role,
+        action: 'attendance_saved',
+        entityType: 'attendance',
+        entityId: eventId,
+        entityName: eventTitle,
+        description: `${currentUser.name || currentUser.email} salvou presenças do evento ${eventTitle}`,
+        metadata: {
+          present: countPresent,
+          absent: countAbsent,
+          justified: countJustified,
+          extras: countExtras,
+          not_applicable: countNotApplicable,
+          total: totalCount
+        }
+      });
+    }
   };
 
   // 6. User CRUD triggers (Admin only) with Supabase Sync
@@ -277,19 +449,35 @@ function AppContent() {
     let finalManagementTermId = newUser.managementTermId;
 
     if (currentUser.role === 'admin') {
+      if (finalRole === 'diretoria_admin' && !finalManagementTermId) {
+        alert('Selecione uma gestão para esta conta de Diretoria Admin.');
+        return;
+      }
       if (finalRole === 'diretoria' && !finalManagementTermId) {
         alert('Selecione uma gestão para esta conta de Diretoria.');
         return;
       }
-    } else if (currentUser.role === 'diretoria') {
+    } else if (currentUser.role === 'diretoria_admin') {
       if (!currentUser.managementTermId) {
-        alert('Sua conta de Diretoria não está vinculada a uma gestão. Procure um administrador.');
+        alert('Sua conta Diretoria Admin não está vinculada a uma gestão. Procure um administrador.');
+        return;
+      }
+      if (finalRole !== 'diretoria') {
+        alert('Diretoria Admin só pode criar contas Diretoria.');
         return;
       }
       finalRole = 'diretoria';
       finalManagementTermId = currentUser.managementTermId;
+    } else if (currentUser.role === 'diretoria') {
+      alert('Diretoria não pode criar usuários.');
+      return;
     } else if (currentUser.role === 'visualizacao') {
-      alert('Ação não permitida para este perfil.');
+      alert('Visualização não pode criar usuários.');
+      return;
+    }
+
+    if ((finalRole === 'diretoria' || finalRole === 'diretoria_admin') && !finalManagementTermId) {
+      alert('Selecione uma gestão para esta conta.');
       return;
     }
 
@@ -304,28 +492,64 @@ function AppContent() {
     setUsers(updated);
     saveUsers(updated);
     pushUserToSupabase(created); // Background cloud push
+
+    logAuditAction({
+      managementTermId: created.managementTermId || null,
+      userId: currentUser.id,
+      userName: currentUser.name || currentUser.email,
+      userRole: currentUser.role,
+      action: 'user_created',
+      entityType: 'user',
+      entityId: created.id,
+      entityName: created.name,
+      description: `${currentUser.name || currentUser.email} criou usuário ${created.name}`,
+      newData: created
+    });
   };
 
   const handleUpdateUser = (updatedUser: User) => {
     if (!currentUser) return;
 
+    const target = users.find(u => u.id === updatedUser.id);
+    if (!target) return;
+
     let finalRole = updatedUser.role;
     let finalManagementTermId = updatedUser.managementTermId;
 
     if (currentUser.role === 'admin') {
+      if (finalRole === 'diretoria_admin' && !finalManagementTermId) {
+        alert('Selecione uma gestão para esta conta de Diretoria Admin.');
+        return;
+      }
       if (finalRole === 'diretoria' && !finalManagementTermId) {
         alert('Selecione uma gestão para esta conta de Diretoria.');
         return;
       }
-    } else if (currentUser.role === 'diretoria') {
-      if (!currentUser.managementTermId) {
-        alert('Sua conta de Diretoria não está vinculada a uma gestão. Procure um administrador.');
+    } else if (currentUser.role === 'diretoria_admin') {
+      if (target.role !== 'diretoria' || target.managementTermId !== currentUser.managementTermId) {
+        alert('Ação não permitida para este perfil.');
         return;
       }
-      finalRole = 'diretoria';
-      finalManagementTermId = currentUser.managementTermId;
+      if (finalRole !== target.role) {
+        alert('Você não pode alterar o perfil deste usuário.');
+        return;
+      }
+      if (finalManagementTermId !== target.managementTermId) {
+        alert('Você não pode alterar a gestão vinculada deste usuário.');
+        return;
+      }
+      finalRole = target.role;
+      finalManagementTermId = target.managementTermId;
+    } else if (currentUser.role === 'diretoria') {
+      alert('Ação não permitida para este perfil.');
+      return;
     } else if (currentUser.role === 'visualizacao') {
       alert('Ação não permitida para este perfil.');
+      return;
+    }
+
+    if ((finalRole === 'diretoria' || finalRole === 'diretoria_admin') && !finalManagementTermId) {
+      alert('Selecione uma gestão para esta conta.');
       return;
     }
 
@@ -338,7 +562,27 @@ function AppContent() {
     const updated = users.map(u => (u.id === boundUser.id ? boundUser : u));
     setUsers(updated);
     saveUsers(updated);
+
+    if (currentUser.id === boundUser.id) {
+      setCurrentUser(boundUser);
+      saveCurrentUser(boundUser);
+    }
+
     pushUserToSupabase(boundUser); // Background cloud push
+
+    logAuditAction({
+      managementTermId: boundUser.managementTermId || null,
+      userId: currentUser.id,
+      userName: currentUser.name || currentUser.email,
+      userRole: currentUser.role,
+      action: 'user_updated',
+      entityType: 'user',
+      entityId: boundUser.id,
+      entityName: boundUser.name,
+      description: `${currentUser.name || currentUser.email} atualizou usuário ${boundUser.name}`,
+      oldData: target || null,
+      newData: boundUser
+    });
   };
 
   const handleDeleteUser = (id: string) => {
@@ -350,14 +594,21 @@ function AppContent() {
     const target = users.find(u => u.id === id);
     if (!target) return;
 
-    if (currentUser.role === 'diretoria') {
+    if (currentUser.role === 'diretoria' || currentUser.role === 'diretoria_admin') {
       if (target.role === 'admin') {
-        alert('A Diretoria não tem permissão para remover administradores do sistema.');
+        alert('A Diretoria/Diretoria Admin não tem permissão para remover administradores do sistema.');
         return;
       }
-      if (target.managementTermId !== currentUser.managementTermId) {
-        alert('A Diretoria não tem permissão para remover usuários de outras gestões.');
-        return;
+      if (currentUser.role === 'diretoria') {
+        if (target.managementTermId !== currentUser.managementTermId) {
+          alert('A Diretoria não tem permissão para remover usuários de outras gestões.');
+          return;
+        }
+      } else if (currentUser.role === 'diretoria_admin') {
+        if (target.managementTermId !== currentUser.managementTermId) {
+          alert('O Diretoria Admin não tem permissão para remover usuários de outras gestões.');
+          return;
+        }
       }
     }
 
@@ -368,6 +619,19 @@ function AppContent() {
     setUsers(updated);
     saveUsers(updated);
     deleteUserFromSupabase(id); // Background cloud delete
+
+    logAuditAction({
+      managementTermId: target.managementTermId || null,
+      userId: currentUser.id,
+      userName: currentUser.name || currentUser.email,
+      userRole: currentUser.role,
+      action: 'user_deleted',
+      entityType: 'user',
+      entityId: id,
+      entityName: target.name,
+      description: `${currentUser.name || currentUser.email} excluiu usuário ${target.name}`,
+      oldData: target
+    });
   };
 
   // Support direct redirect for marking attendance
@@ -390,7 +654,7 @@ function AppContent() {
     : attendances;
 
   return (
-    <>
+    <RealtimeProvider currentUser={currentUser} onRefreshData={handleSyncFromSupabase}>
       <Routes>
         {/* Public Ranking Route */}
         <Route
@@ -606,6 +870,45 @@ function AppContent() {
           }
         />
 
+        {/* Audit Log Route */}
+        <Route
+          path="/admin/auditoria"
+          element={
+            currentUser ? (
+              currentUser.role === 'admin' || currentUser.role === 'diretoria_admin' ? (
+                <Layout
+                  currentUser={currentUser}
+                  onLogout={handleLogout}
+                  activeTab="auditoria"
+                  setActiveTab={(tab) => navigate(`/admin/${tab}`)}
+                >
+                  <AuditPage currentUser={currentUser} />
+                </Layout>
+              ) : (
+                <Layout
+                  currentUser={currentUser}
+                  onLogout={handleLogout}
+                  activeTab="auditoria"
+                  setActiveTab={(tab) => navigate(`/admin/${tab}`)}
+                >
+                  <div className="p-8 bg-white border border-slate-200 rounded-xl max-w-lg mx-auto text-center shadow-xs">
+                    <h2 className="text-rose-650 font-extrabold text-base mb-2">Acesso não permitido</h2>
+                    <p className="text-slate-600 text-sm">Ação não permitida para este perfil.</p>
+                    <button 
+                      onClick={() => navigate('/admin/dashboard')} 
+                      className="mt-6 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2 px-4 rounded-lg transition cursor-pointer"
+                    >
+                      Voltar ao Dashboard
+                    </button>
+                  </div>
+                </Layout>
+              )
+            ) : (
+              <Navigate to="/admin" replace />
+            )
+          }
+        />
+
         {/* Database Sync Control - Admin Only */}
         <Route
           path="/admin/database"
@@ -642,24 +945,20 @@ function AppContent() {
           path="/admin/usuarios"
           element={
             currentUser ? (
-              (currentUser.role === 'admin' || currentUser.role === 'diretoria') ? (
-                <Layout
+              <Layout
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                activeTab="usuarios"
+                setActiveTab={(tab) => navigate(`/admin/${tab}`)}
+              >
+                <UsersPage
+                  users={users}
                   currentUser={currentUser}
-                  onLogout={handleLogout}
-                  activeTab="usuarios"
-                  setActiveTab={(tab) => navigate(`/admin/${tab}`)}
-                >
-                  <UsersPage
-                    users={users}
-                    currentUser={currentUser}
-                    onAddUser={handleAddUser}
-                    onUpdateUser={handleUpdateUser}
-                    onDeleteUser={handleDeleteUser}
-                  />
-                </Layout>
-              ) : (
-                <Navigate to="/admin/dashboard" replace />
-              )
+                  onAddUser={handleAddUser}
+                  onUpdateUser={handleUpdateUser}
+                  onDeleteUser={handleDeleteUser}
+                />
+              </Layout>
             ) : (
               <Navigate to="/admin" replace />
             )
@@ -719,7 +1018,7 @@ function AppContent() {
           onClose={() => setSelectedMemberModal(null)}
         />
       )}
-    </>
+    </RealtimeProvider>
   );
 }
 

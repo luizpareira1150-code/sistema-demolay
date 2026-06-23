@@ -48,7 +48,7 @@ export default function NominataPage({
   const { activeTerm } = useManagementTerm();
   const canEditTerm = canEditCurrentManagementTerm(currentUser, activeTerm);
 
-  const canModify = (currentUser.role === 'admin' || currentUser.role === 'diretoria') && canEditTerm;
+  const canModify = (currentUser.role === 'admin' || currentUser.role === 'diretoria' || currentUser.role === 'diretoria_admin') && canEditTerm;
 
   // Active Nominata section
   const [activeNominata, setActiveNominata] = useState<NominataType>('diretoria');

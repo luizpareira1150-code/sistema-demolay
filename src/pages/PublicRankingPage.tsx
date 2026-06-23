@@ -8,7 +8,10 @@ import {
   Award,
   BookOpen,
   UserCheck,
-  Calendar
+  Calendar,
+  Wifi,
+  WifiOff,
+  RefreshCw
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Member, Event, Attendance, MemberStats, EventCategory } from '../types';
@@ -16,6 +19,7 @@ import { calculateMemberStats, CATEGORY_LABELS, EXTRA_PARTICIPATION_WEIGHT } fro
 import { getLocalManagementTerms } from '../utils/storage';
 import ProgressBar from '../components/ProgressBar';
 import MemberProfileModal from '../components/MemberProfileModal';
+import { useRealtimeSync } from '../contexts/RealtimeContext';
 
 interface PublicRankingPageProps {
   members: Member[];
@@ -28,7 +32,39 @@ export default function PublicRankingPage({
   events,
   attendances
 }: PublicRankingPageProps) {
+  const { status } = useRealtimeSync();
   const [searchTerm, setSearchTerm] = useState('');
+
+  const renderRealtimeBadge = () => {
+    switch (status) {
+      case 'connecting':
+        return (
+          <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 text-amber-400 border border-slate-700 text-xs animate-pulse">
+            <RefreshCw className="h-3 w-3 animate-spin text-amber-400" />
+            <span>Atualizando...</span>
+          </div>
+        );
+      case 'connected':
+        return (
+          <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 text-emerald-400 border border-slate-700 text-xs">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400"></span>
+            </span>
+            <span>Sincronizado</span>
+          </div>
+        );
+      case 'error':
+        return (
+          <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800 text-rose-400 border border-slate-700 text-xs">
+            <WifiOff className="h-3 w-3 text-rose-400" />
+            <span>Desconectado</span>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
   const [categoryFilter, setCategoryFilter] = useState<EventCategory | 'all'>('all');
   const [degreeFilter, setDegreeFilter] = useState<'all' | 'iniciatico' | 'demolay'>('all');
   const [selectedMemberModal, setSelectedMemberModal] = useState<Member | null>(null);
@@ -243,13 +279,16 @@ export default function PublicRankingPage({
             </div>
           </div>
           
-          <div className="text-center md:text-right">
-            <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400 block mb-0.5">
-              Última Atualização
+          <div className="flex flex-col items-center md:items-end gap-1.5 shrink-0">
+            <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400">
+              Sincronização em tempo real
             </span>
-            <span className="text-xs bg-slate-800 px-3 py-1 rounded-full border border-slate-700/50 text-slate-200">
-              {getTodayFormatted()}
-            </span>
+            <div className="flex items-center gap-2 flex-wrap justify-center">
+              {renderRealtimeBadge()}
+              <span className="text-xs bg-slate-800 px-3 py-1 rounded-full border border-slate-700/50 text-slate-200">
+                {getTodayFormatted()}
+              </span>
+            </div>
           </div>
         </div>
       </header>

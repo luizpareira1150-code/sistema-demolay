@@ -36,6 +36,7 @@ export const SUPABASE_TABLES = {
   USERS: 'demolay_users',
   PHOTOS: 'demolay_event_photos',
   MANAGEMENT_TERMS: 'management_terms',
+  AUDIT_LOGS: 'audit_logs',
 };
 
 /**

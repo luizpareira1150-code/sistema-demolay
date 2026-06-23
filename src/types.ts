@@ -53,7 +53,7 @@ export interface Attendance {
   managementTermId?: string;
 }
 
-export type UserRole = 'admin' | 'diretoria' | 'visualizacao';
+export type UserRole = 'admin' | 'diretoria_admin' | 'diretoria' | 'visualizacao';
 
 export interface EventPhoto {
   id: string;

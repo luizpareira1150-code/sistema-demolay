@@ -9,8 +9,8 @@ export function canEditCurrentManagementTerm(
   // Rule: Admin can edit any management term
   if (currentUser.role === 'admin') return true;
 
-  // Rule: Diretoria can edit only if user.managementTermId matches activeTerm.id
-  if (currentUser.role === 'diretoria') {
+  // Rule: Diretoria/Diretoria Admin can edit only if user.managementTermId matches activeTerm.id
+  if (currentUser.role === 'diretoria' || currentUser.role === 'diretoria_admin') {
     if (!activeTerm) return false;
     return currentUser.managementTermId === activeTerm.id;
   }

@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS "demolay_users" (
   "name" TEXT NOT NULL,
   "email" TEXT NOT NULL,
   "password" TEXT NOT NULL, -- Senha de login semente
-  "role" TEXT NOT NULL DEFAULT 'visualizacao' CHECK ("role" IN ('admin', 'diretoria', 'visualizacao')),
+  "role" TEXT NOT NULL DEFAULT 'visualizacao' CHECK ("role" IN ('admin', 'diretoria_admin', 'diretoria', 'visualizacao')),
   "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL,
   "created_by" TEXT REFERENCES "demolay_users"("id") ON DELETE SET NULL,
   "createdAt" TIMESTAMPTZ DEFAULT NOW(),
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS "demolay_users" (
 -- Garantir validações por constraint em novas linhas de demolay_users
 ALTER TABLE "demolay_users" DROP CONSTRAINT IF EXISTS "demolay_users_management_term_required_for_diretoria";
 ALTER TABLE "demolay_users" ADD CONSTRAINT "demolay_users_management_term_required_for_diretoria"
-  CHECK ("role" <> 'diretoria' OR "management_term_id" IS NOT NULL);
+  CHECK ("role" NOT IN ('diretoria', 'diretoria_admin') OR "management_term_id" IS NOT NULL);
 
 -- --------------------------------------------------------------------
 -- 6. TABELA DE PERFIS AUTENTICADOS (Supabase Auth profiles)
@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS "profiles" (
   "id" UUID PRIMARY KEY REFERENCES auth.users("id") ON DELETE CASCADE,
   "name" TEXT NOT NULL,
   "email" TEXT NOT NULL,
-  "role" TEXT NOT NULL DEFAULT 'visualizacao' CHECK ("role" IN ('admin', 'diretoria', 'visualizacao')),
+  "role" TEXT NOT NULL DEFAULT 'visualizacao' CHECK ("role" IN ('admin', 'diretoria_admin', 'diretoria', 'visualizacao')),
   "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL,
   "created_by" UUID REFERENCES auth.users("id") ON DELETE SET NULL,
   "createdAt" TIMESTAMPTZ DEFAULT NOW(),
@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS "profiles" (
 -- Garantir validações por constraint em novas linhas de profiles
 ALTER TABLE "profiles" DROP CONSTRAINT IF EXISTS "profiles_management_term_required_for_diretoria";
 ALTER TABLE "profiles" ADD CONSTRAINT "profiles_management_term_required_for_diretoria"
-  CHECK ("role" <> 'diretoria' OR "management_term_id" IS NOT NULL);
+  CHECK ("role" NOT IN ('diretoria', 'diretoria_admin') OR "management_term_id" IS NOT NULL);
 
 -- --------------------------------------------------------------------
 -- 7. TABELA DE CONFIGURAÇÕES DO SISTEMA (system_settings)
@@ -161,13 +161,19 @@ ON CONFLICT ("id") DO NOTHING;
 -- --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS "audit_logs" (
   "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  "actorId" TEXT, -- Identificador do autor do evento (Nome, Email ou UUID)
-  "action" TEXT NOT NULL, -- 'INSERT', 'UPDATE', 'DELETE', 'BULK_SYNC'
-  "tableName" TEXT NOT NULL,
-  "recordId" TEXT NOT NULL,
-  "oldData" JSONB,
-  "newData" JSONB,
-  "createdAt" TIMESTAMPTZ DEFAULT NOW()
+  "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL,
+  "user_id" UUID REFERENCES auth.users("id") ON DELETE SET NULL,
+  "user_name" TEXT,
+  "user_role" TEXT,
+  "action" TEXT NOT NULL,
+  "entity_type" TEXT NOT NULL,
+  "entity_id" UUID,
+  "entity_name" TEXT,
+  "description" TEXT NOT NULL,
+  "old_data" JSONB,
+  "new_data" JSONB,
+  "metadata" JSONB,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- --------------------------------------------------------------------
@@ -203,6 +209,13 @@ CREATE INDEX IF NOT EXISTS "idx_profiles_management_term_id" ON "profiles"("mana
 CREATE INDEX IF NOT EXISTS "idx_members_management_term_id" ON "demolay_members"("management_term_id");
 CREATE INDEX IF NOT EXISTS "idx_events_management_term_id" ON "demolay_events"("management_term_id");
 CREATE INDEX IF NOT EXISTS "idx_attendance_management_term_id" ON "demolay_attendance"("management_term_id");
+
+-- Índices para a Tabela de Auditoria (audit_logs)
+CREATE INDEX IF NOT EXISTS "idx_audit_logs_management_term_id" ON "audit_logs"("management_term_id");
+CREATE INDEX IF NOT EXISTS "idx_audit_logs_user_id" ON "audit_logs"("user_id");
+CREATE INDEX IF NOT EXISTS "idx_audit_logs_action" ON "audit_logs"("action");
+CREATE INDEX IF NOT EXISTS "idx_audit_logs_entity_type" ON "audit_logs"("entity_type");
+CREATE INDEX IF NOT EXISTS "idx_audit_logs_created_at" ON "audit_logs"("created_at" DESC);
 
 -- ====================================================================
 -- TRIGGERS DE ATUALIZAÇÃO AUTOMÁTICA (updatedAt/updated_at)

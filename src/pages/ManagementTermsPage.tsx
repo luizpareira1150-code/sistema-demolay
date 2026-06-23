@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { ManagementTerm, User } from '../types';
 import { getLocalManagementTerms, saveLocalManagementTerms } from '../utils/storage';
-import { pushManagementTermToSupabase, downloadSupabaseToLocal } from '../utils/supabaseService';
+import { pushManagementTermToSupabase, downloadSupabaseToLocal, logAuditAction } from '../utils/supabaseService';
 import { generateUUID } from '../utils/supabaseClient';
 
 interface ManagementTermsPageProps {
@@ -145,9 +145,28 @@ export default function ManagementTermsPage({
     // Push changes to Supabase and handle response
     const res = await pushManagementTermToSupabase(termData);
     if (res.success) {
-      triggerSuccess(editingTerm ? 'Gestão atualizada com sucesso no sistema e no Supabase!' : 'Gestão cadastrada e sincronizada com sucesso!');
+      triggerSuccess(editingTerm ? 'Gestão updated com sucesso no sistema e no Supabase!' : 'Gestão cadastrada e sincronizada com sucesso!');
     } else {
       triggerError(`Gestão salva localmente, mas falhou ao sincronizar com o Supabase: ${res.message}`);
+    }
+
+    // Register audit log
+    if (currentUser) {
+      logAuditAction({
+        managementTermId: termData.id,
+        userId: currentUser.id,
+        userName: currentUser.name || currentUser.email,
+        userRole: currentUser.role,
+        action: editingTerm ? 'management_term_updated' : 'management_term_created',
+        entityType: 'management_term',
+        entityId: termData.id,
+        entityName: termData.name,
+        description: editingTerm 
+          ? `${currentUser.name || currentUser.email} atualizou a gestão ${termData.name}`
+          : `${currentUser.name || currentUser.email} criou a gestão ${termData.name}`,
+        oldData: editingTerm || null,
+        newData: termData
+      });
     }
     
     // Refresh the application data in main state
@@ -177,6 +196,25 @@ export default function ManagementTermsPage({
       );
     } else {
       triggerError(`Estado alterado localmente, mas falhou no Supabase: ${res.message}`);
+    }
+
+    // Register audit log
+    if (currentUser) {
+      logAuditAction({
+        managementTermId: term.id,
+        userId: currentUser.id,
+        userName: currentUser.name || currentUser.email,
+        userRole: currentUser.role,
+        action: updatedStatus === 'archived' ? 'archived' : 'management_term_updated',
+        entityType: 'management_term',
+        entityId: term.id,
+        entityName: term.name,
+        description: updatedStatus === 'archived'
+          ? `${currentUser.name || currentUser.email} arquivou a gestão ${term.name}`
+          : `${currentUser.name || currentUser.email} reativou a gestão ${term.name}`,
+        oldData: term,
+        newData: updatedTerm
+      });
     }
 
     if (onRefreshData) {

@@ -192,8 +192,8 @@ export async function pushUserToSupabase(user: User): Promise<void> {
       error = retryResult.error;
     }
 
-    // Se ainda houver erro de chave estrangeira (por exemplo, em management_term_id) e o perfil não for Diretoria, tenta sem ela
-    if (error && user.role !== 'diretoria' && (
+    // Se ainda houver erro de chave estrangeira (por exemplo, em management_term_id) e o perfil não for Diretoria/Diretoria Admin, tenta sem ela
+    if (error && user.role !== 'diretoria' && user.role !== 'diretoria_admin' && (
       error.message.includes('management_term') ||
       error.message.includes('foreign key') ||
       error.code === '23503'
@@ -376,14 +376,14 @@ export async function uploadLocalToSupabase(): Promise<{ success: boolean; messa
       }
 
       // Se houver erro de chave estrangeira nas gestões para usuários normais, tenta sem relacionamentos
-      if (error && rows.some(r => r.role !== 'diretoria') && (
+      if (error && rows.some(r => r.role !== 'diretoria' && r.role !== 'diretoria_admin') && (
         error.message.includes('management_term') ||
         error.message.includes('foreign key') ||
         error.code === '23503'
       )) {
         console.warn('Tentando sincronização em lote limpando chaves estrangeiras de usuários não-diretoria...');
         const rowsCleaned = rows.map(r => {
-          if (r.role !== 'diretoria') {
+          if (r.role !== 'diretoria' && r.role !== 'diretoria_admin') {
             return { ...r, management_term_id: null, created_by: null };
           }
           return r;
@@ -619,3 +619,95 @@ export async function deleteManagementTermFromSupabase(id: string): Promise<{ su
     return { success: false, message: err.message || String(err) };
   }
 }
+
+export interface AuditLogInput {
+  managementTermId?: string | null;
+  userId: string;
+  userName: string;
+  userRole: string;
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  entityName?: string | null;
+  description: string;
+  oldData?: any;
+  newData?: any;
+  metadata?: any;
+}
+
+function isValidUUID(uuid?: string | null): boolean {
+  if (!uuid) return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
+}
+
+/**
+ * Inserts a log of an operation into the audit_logs table on Supabase.
+ */
+export async function logAuditAction(input: AuditLogInput): Promise<void> {
+  try {
+    const validatedUserId = isValidUUID(input.userId) ? input.userId : null;
+    const validatedTermId = isValidUUID(input.managementTermId) ? input.managementTermId : null;
+    const validatedEntityId = isValidUUID(input.entityId) ? input.entityId : null;
+
+    const { error } = await supabase
+      .from(SUPABASE_TABLES.AUDIT_LOGS)
+      .insert({
+        management_term_id: validatedTermId,
+        user_id: validatedUserId,
+        user_name: input.userName || 'Sistema',
+        user_role: input.userRole || 'visualizacao',
+        action: input.action,
+        entity_type: input.entityType,
+        entity_id: validatedEntityId,
+        entity_name: input.entityName || null,
+        description: input.description,
+        old_data: input.oldData || null,
+        new_data: input.newData || null,
+        metadata: input.metadata || null
+      });
+
+    if (error) {
+      console.warn('Erro ao salvar log de auditoria no Supabase:', error.message, error.code);
+    } else {
+      console.log(`[Audit Log] ${input.description}`);
+    }
+  } catch (err) {
+    console.warn('Erro de rede ao salvar log de auditoria no Supabase:', err);
+  }
+}
+
+/**
+ * Fetches audit logs from Supabase, filtered by managementTermId and ordered by created_at desc.
+ */
+export async function fetchAuditLogs(managementTermId: string | null): Promise<{ success: boolean; data: any[]; message?: string }> {
+  try {
+    let query = supabase
+      .from(SUPABASE_TABLES.AUDIT_LOGS)
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (managementTermId) {
+      if (isValidUUID(managementTermId)) {
+        query = query.eq('management_term_id', managementTermId);
+      } else {
+        // If it's a local/temporary ID (not a valid UUID), return empty array
+        return { success: true, data: [] };
+      }
+    } else {
+      // If no managementTermId is provided, we still query all (for full admins if they didn't select one, though the app usually has activeTerm).
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Erro ao carregar logs de auditoria:', error.message);
+      return { success: false, data: [], message: error.message };
+    }
+
+    return { success: true, data: data || [] };
+  } catch (err: any) {
+    console.warn('Erro de rede ao carregar logs de auditoria:', err);
+    return { success: false, data: [], message: err.message || String(err) };
+  }
+}
+
