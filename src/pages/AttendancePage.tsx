@@ -18,6 +18,8 @@ import {
 import { Member, Event, Attendance, AttendanceStatus, User, EventPhoto } from '../types';
 import { CATEGORY_LABELS, getMemberEligibility } from '../utils/calculations';
 import { useNotification } from '../components/NotificationContext';
+import { useManagementTerm } from '../contexts/ManagementTermContext';
+import { canEditCurrentManagementTerm } from '../utils/permission';
 import Button from '../components/Button';
 import ConfirmModal from '../components/ConfirmModal';
 import { getEventPhotos, saveEventPhotos } from '../utils/storage';
@@ -43,6 +45,9 @@ export default function AttendancePage({
   onClearSelectedEvent
 }: AttendancePageProps) {
   const { showNotification } = useNotification();
+  const { activeTerm } = useManagementTerm();
+  const canEditTerm = canEditCurrentManagementTerm(currentUser, activeTerm);
+  const isReadOnly = currentUser.role === 'visualizacao' || !canEditTerm;
 
   // Select active members
   const activeMembers = members.filter(m => m.status === 'active');
@@ -114,7 +119,7 @@ export default function AttendancePage({
     const file = e.target.files?.[0];
     if (!file || !currentEvent) return;
 
-    if (currentUser.role === 'visualizacao') {
+    if (isReadOnly) {
       showNotification('error', 'Apenas coordenadores podem adicionar fotos de comprovação.');
       return;
     }
@@ -154,7 +159,7 @@ export default function AttendancePage({
     const photoId = photoToDelete;
     setPhotoToDelete(null);
 
-    if (currentUser.role === 'visualizacao') {
+    if (isReadOnly) {
       showNotification('error', 'Apenas coordenadores podem remover fotos de comprovação.');
       return;
     }
@@ -212,7 +217,7 @@ export default function AttendancePage({
 
   // Handle status selection for a single member
   const handleSelectStatus = (memberId: string, status: AttendanceStatus) => {
-    if (currentUser.role === 'visualizacao') return; // Read-only guard
+    if (isReadOnly) return; // Read-only guard
     setLocalAttendance(prev => ({
       ...prev,
       [memberId]: {
@@ -224,7 +229,7 @@ export default function AttendancePage({
 
   // Handle note editing for a single member
   const handleEditNote = (memberId: string, note: string) => {
-    if (currentUser.role === 'visualizacao') return;
+    if (isReadOnly) return;
     setLocalAttendance(prev => ({
       ...prev,
       [memberId]: {
@@ -236,7 +241,7 @@ export default function AttendancePage({
 
   // Group-specific Bulk acts
   const handleMarkGroupAll = (groupMembers: Member[], status: AttendanceStatus) => {
-    if (currentUser.role === 'visualizacao') return;
+    if (isReadOnly) return;
     const updated = { ...localAttendance };
     groupMembers.forEach(m => {
       updated[m.id] = {
@@ -249,7 +254,7 @@ export default function AttendancePage({
   };
 
   const handleClearGroupAll = (groupMembers: Member[]) => {
-    if (currentUser.role === 'visualizacao') return;
+    if (isReadOnly) return;
     const updated = { ...localAttendance };
     groupMembers.forEach(m => {
       updated[m.id] = {
@@ -262,7 +267,7 @@ export default function AttendancePage({
   };
 
   const handleSave = () => {
-    if (!currentEvent || currentUser.role === 'visualizacao') return;
+    if (!currentEvent || isReadOnly) return;
 
     setSaveLoading(true);
 

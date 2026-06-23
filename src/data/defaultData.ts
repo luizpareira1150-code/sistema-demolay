@@ -10,7 +10,8 @@ export const defaultMembers: Member[] = [
     createdAt: '2026-01-10T10:00:00Z',
     degree: 'demolay',
     isNominata: true,
-    nominataRole: 'Mestre Conselheiro'
+    nominataRole: 'Mestre Conselheiro',
+    evaluationStartDate: '2024-02-15'
   },
   {
     id: 'm2',
@@ -20,7 +21,8 @@ export const defaultMembers: Member[] = [
     notes: 'Esforçado mas com conflito de horários de aula.',
     createdAt: '2026-01-10T10:05:00Z',
     degree: 'demolay',
-    isNominata: false
+    isNominata: false,
+    evaluationStartDate: '2024-08-20'
   },
   {
     id: 'm3',
@@ -31,7 +33,8 @@ export const defaultMembers: Member[] = [
     createdAt: '2026-01-10T10:10:00Z',
     degree: 'demolay',
     isNominata: true,
-    nominataRole: 'Mestre de Cerimônias'
+    nominataRole: 'Mestre de Cerimônias',
+    evaluationStartDate: '2025-01-10'
   },
   {
     id: 'm4',
@@ -41,7 +44,8 @@ export const defaultMembers: Member[] = [
     notes: 'Trabalhando em outra cidade nos fins de semana.',
     createdAt: '2026-01-10T10:15:00Z',
     degree: 'iniciatico',
-    isNominata: false
+    isNominata: false,
+    evaluationStartDate: '2025-03-22'
   },
   {
     id: 'm5',
@@ -52,7 +56,8 @@ export const defaultMembers: Member[] = [
     createdAt: '2026-01-10T10:20:00Z',
     degree: 'demolay',
     isNominata: true,
-    nominataRole: 'Capelão'
+    nominataRole: 'Capelão',
+    evaluationStartDate: '2023-11-05'
   },
   {
     id: 'm6',
@@ -62,7 +67,8 @@ export const defaultMembers: Member[] = [
     notes: 'Muito ativo em projetos de limpeza e organização.',
     createdAt: '2026-01-10T10:25:00Z',
     degree: 'iniciatico',
-    isNominata: false
+    isNominata: false,
+    evaluationStartDate: '2025-05-18'
   },
   {
     id: 'm7',
@@ -73,7 +79,8 @@ export const defaultMembers: Member[] = [
     createdAt: '2026-01-10T10:30:00Z',
     degree: 'iniciatico',
     isNominata: true,
-    nominataRole: 'Tesoureiro'
+    nominataRole: 'Tesoureiro',
+    evaluationStartDate: '2024-11-12'
   },
   {
     id: 'm8',
@@ -83,7 +90,8 @@ export const defaultMembers: Member[] = [
     notes: 'Ausências frequentes devido a problemas de saúde.',
     createdAt: '2026-01-10T10:35:00Z',
     degree: 'iniciatico',
-    isNominata: false
+    isNominata: false,
+    evaluationStartDate: '2025-02-28'
   }
 ];
 

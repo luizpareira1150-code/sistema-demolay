@@ -8,9 +8,11 @@ import {
   ShieldAlert,
   X,
   AlertCircle,
-  UserCheck
+  UserCheck,
+  Calendar
 } from 'lucide-react';
 import { User, UserRole } from '../types';
+import { getLocalManagementTerms } from '../utils/storage';
 
 interface UsersPageProps {
   users: User[];
@@ -27,7 +29,19 @@ export default function UsersPage({
   onUpdateUser,
   onDeleteUser
 }: UsersPageProps) {
+  const managementTerms = getLocalManagementTerms();
+
   // Only Admin and Diretoria have access (extra safety guard)
+  if (currentUser.role === 'visualizacao') {
+    return (
+      <div className="bg-red-55 p-6 rounded-xl border border-red-200 text-center space-y-4 max-w-xl mx-auto">
+        <ShieldAlert className="h-10 w-10 text-red-650 mx-auto" />
+        <h3 className="text-lg font-bold text-red-900">Acesso Restrito</h3>
+        <p className="text-sm text-red-700">Ação não permitida para este perfil.</p>
+      </div>
+    );
+  }
+
   if (currentUser.role !== 'admin' && currentUser.role !== 'diretoria') {
     return (
       <div className="bg-red-55 p-6 rounded-xl border border-red-200 text-center space-y-4 max-w-xl mx-auto">
@@ -50,6 +64,7 @@ export default function UsersPage({
   const [formEmail, setFormEmail] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [formRole, setFormRole] = useState<UserRole>('visualizacao');
+  const [formManagementTermId, setFormManagementTermId] = useState<string>('');
   const [formError, setFormError] = useState('');
 
   // Open forms handlers
@@ -58,17 +73,46 @@ export default function UsersPage({
     setFormName('');
     setFormEmail('');
     setFormPassword('');
-    setFormRole(currentUser.role === 'diretoria' ? 'diretoria' : 'visualizacao');
-    setFormError('');
+    
+    const initialRole = currentUser.role === 'diretoria' ? 'diretoria' : 'visualizacao';
+    const initialTermId = currentUser.role === 'diretoria' ? (currentUser.managementTermId || '') : '';
+    
+    setFormRole(initialRole);
+    setFormManagementTermId(initialTermId);
+    
+    if (currentUser.role === 'diretoria' && !currentUser.managementTermId) {
+      setFormError('Sua conta de Diretoria não está vinculada a uma gestão. Procure um administrador.');
+    } else {
+      setFormError('');
+    }
     setIsFormOpen(true);
   };
 
   const handleOpenEdit = (user: User) => {
+    if (currentUser.role === 'diretoria') {
+      if (!currentUser.managementTermId) {
+        alert('Sua conta de Diretoria não está vinculada a uma gestão. Procure um administrador.');
+        return;
+      }
+      if (user.role === 'admin') {
+        alert('Diretoria não pode modificar contas de administrador.');
+        return;
+      }
+    }
+
     setEditingUser(user);
     setFormName(user.name);
     setFormEmail(user.email);
     setFormPassword(user.password);
-    setFormRole(user.role);
+    
+    if (currentUser.role === 'diretoria') {
+      setFormRole('diretoria');
+      setFormManagementTermId(currentUser.managementTermId || '');
+    } else {
+      setFormRole(user.role);
+      setFormManagementTermId(user.managementTermId || '');
+    }
+    
     setFormError('');
     setIsFormOpen(true);
   };
@@ -76,6 +120,11 @@ export default function UsersPage({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
+
+    if (currentUser.role === 'visualizacao') {
+      setFormError('Ação não permitida para este perfil.');
+      return;
+    }
 
     if (!formName.trim()) {
       setFormError('O nome completo é obrigatório.');
@@ -90,8 +139,28 @@ export default function UsersPage({
       return;
     }
 
-    if (currentUser.role === 'diretoria' && formRole === 'admin') {
-      setFormError('Sua conta possui perfil de Diretoria e não tem privilégios para criar ou modificar contas do tipo Administrador.');
+    if (currentUser.role === 'diretoria') {
+      if (!currentUser.managementTermId) {
+        setFormError('Sua conta de Diretoria não está vinculada a uma gestão. Procure um administrador.');
+        return;
+      }
+      if (formRole === 'admin') {
+        setFormError('Diretoria não pode criar contas de administrador.');
+        return;
+      }
+      if (formRole !== 'diretoria') {
+        setFormError('Diretoria não pode criar contas com perfil diferente de Diretoria.');
+        return;
+      }
+      if (formManagementTermId !== currentUser.managementTermId) {
+        setFormError('Diretoria não pode vincular contas a outra gestão.');
+        return;
+      }
+    }
+
+    // Rule: for 'diretoria' profile, the bound management term selection is MANDATORY.
+    if (formRole === 'diretoria' && !formManagementTermId) {
+      setFormError('Selecione uma gestão para esta conta de Diretoria.');
       return;
     }
 
@@ -105,23 +174,36 @@ export default function UsersPage({
       return;
     }
 
+    const term = managementTerms.find(t => t.id === formManagementTermId);
+    const termName = term ? term.name : '';
+
     if (editingUser) {
       onUpdateUser({
         ...editingUser,
         name: formName.trim(),
         email: formEmail.trim().toLowerCase(),
         password: formPassword,
-        role: formRole
+        role: formRole,
+        managementTermId: formManagementTermId || undefined
       });
-      setSuccessMessage('Usuário salvo com sucesso.');
+      if (formRole === 'diretoria') {
+        setSuccessMessage(`Conta de Diretoria vinculada à gestão ${termName}.`);
+      } else {
+        setSuccessMessage('Usuário salvo com sucesso.');
+      }
     } else {
       onAddUser({
         name: formName.trim(),
         email: formEmail.trim().toLowerCase(),
         password: formPassword,
-        role: formRole
+        role: formRole,
+        managementTermId: formManagementTermId || undefined
       });
-      setSuccessMessage('Usuário salvo com sucesso.');
+      if (formRole === 'diretoria') {
+        setSuccessMessage(`Conta criada com sucesso. Conta de Diretoria vinculada à gestão ${termName}.`);
+      } else {
+        setSuccessMessage('Conta criada com sucesso.');
+      }
     }
 
     setTimeout(() => {
@@ -177,8 +259,10 @@ export default function UsersPage({
 
       {/* Users visual list */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {users.map(user => {
-          const isSelf = user.id === currentUser.id;
+        {users
+          .filter(user => currentUser.role === 'admin' || user.role !== 'admin')
+          .map(user => {
+            const isSelf = user.id === currentUser.id;
 
           return (
             <div
@@ -199,11 +283,17 @@ export default function UsersPage({
                   <div className="h-10 w-10 bg-slate-900 border border-amber-400/30 rounded-full flex items-center justify-center font-bold text-white font-display uppercase tracking-wide shrink-0">
                     {user.name.charAt(0)}
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <h4 className="font-bold text-slate-800 text-sm truncate font-display">{user.name}</h4>
-                    <p className="text-xs text-slate-500 flex items-center gap-1 truncate">
+                    <p className="text-xs text-slate-500 flex items-center gap-1 truncate mb-1">
                       <Mail className="h-3 w-3 shrink-0" /> {user.email}
                     </p>
+                    {user.managementTermId && (
+                      <div className="text-[10px] text-slate-500 flex items-center gap-1 bg-slate-100/55 border border-slate-150 rounded px-1.5 py-0.5 mt-1 font-sans font-medium w-fit">
+                        <Calendar className="h-3 w-3 text-indigo-500 shrink-0" />
+                        <span>Gestão vinculada: <strong className="text-indigo-900 font-bold font-mono">{managementTerms.find(t => t.id === user.managementTermId)?.name || 'Carregando...'}</strong></span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -336,16 +426,59 @@ export default function UsersPage({
                   Perfil de Acesso (Cargo)
                 </label>
                 <select
+                  disabled={currentUser.role === 'diretoria'}
                   value={formRole}
                   onChange={e => setFormRole(e.target.value as UserRole)}
-                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:opacity-75 disabled:cursor-not-allowed"
                 >
-                  {currentUser.role === 'admin' && (
-                    <option value="admin">Administrador (Acesso Irrestrito)</option>
+                  {currentUser.role === 'admin' ? (
+                    <>
+                      <option value="admin">Administrador (Acesso Irrestrito)</option>
+                      <option value="diretoria">Diretoria (Cadastra eventos, marca presenças, sem exclusões)</option>
+                      <option value="visualizacao">Visualização (Apenas relatórios, sem alterações)</option>
+                    </>
+                  ) : (
+                    <option value="diretoria">Diretoria (Cadastra eventos, marca presenças, sem exclusões)</option>
                   )}
-                  <option value="diretoria">Diretoria (Cadastra eventos, marca presenças, sem exclusões)</option>
-                  <option value="visualizacao">Visualização (Apenas relatórios, sem alterações)</option>
                 </select>
+              </div>
+
+              {/* Management selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-widest mb-1.5 flex justify-between items-center">
+                  <span>Gestão Vinculada</span>
+                  {formRole === 'diretoria' ? (
+                    <span className="text-[9px] bg-rose-50 text-rose-700 border border-rose-150 px-1.5 rounded font-bold uppercase tracking-wider">Obrigatório</span>
+                  ) : (
+                    <span className="text-[9px] text-slate-400 font-normal">Opcional</span>
+                  )}
+                </label>
+                <select
+                  disabled={currentUser.role === 'diretoria'}
+                  value={formManagementTermId}
+                  onChange={e => setFormManagementTermId(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900 font-sans disabled:opacity-75 disabled:cursor-not-allowed"
+                >
+                  {currentUser.role === 'diretoria' ? (
+                    <option value={currentUser.managementTermId || ''}>
+                      {managementTerms.find(term => term.id === currentUser.managementTermId)?.name || 'Nenhuma gestão vinculada'}
+                    </option>
+                  ) : (
+                    <>
+                      <option value="">Nenhuma gestão vinculada</option>
+                      {managementTerms.map(term => (
+                        <option key={term.id} value={term.id}>
+                          {term.name} ({term.status === 'active' ? 'Ativo' : 'Arquivado'})
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+                {currentUser.role === 'diretoria' && (
+                  <p className="mt-1 text-xs text-amber-600 font-medium font-sans">
+                    Esta conta herdará automaticamente sua gestão.
+                  </p>
+                )}
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">

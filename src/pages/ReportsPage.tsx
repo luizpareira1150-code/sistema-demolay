@@ -13,6 +13,7 @@ import {
 import { Member, Event, Attendance, EventCategory, MemberStats } from '../types';
 import { calculateMemberStats, calculateChapterAverage, CATEGORY_LABELS } from '../utils/calculations';
 import { exportToCSV } from '../utils/exportCsv';
+import { useManagementTerm } from '../contexts/ManagementTermContext';
 
 interface ReportsPageProps {
   members: Member[];
@@ -21,19 +22,99 @@ interface ReportsPageProps {
 }
 
 export default function ReportsPage({ members, events, attendances }: ReportsPageProps) {
+  const { activeTerm } = useManagementTerm();
+
   // Filters state
   const [categoryFilter, setCategoryFilter] = useState<EventCategory | 'all'>('all');
   const [zoneFilter, setZoneFilter] = useState<'all' | 'green' | 'yellow' | 'red'>('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [draftStartDate, setDraftStartDate] = useState('');
+  const [draftEndDate, setDraftEndDate] = useState('');
+  const [appliedStartDate, setAppliedStartDate] = useState('');
+  const [appliedEndDate, setAppliedEndDate] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+
+  const isPeriodFiltering = !!(appliedStartDate && appliedEndDate);
+
+  const formatDateBR = (dateStr: string) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return dateStr;
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  };
+
+  const handleApplyPeriod = () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    if (!draftStartDate || !draftEndDate) {
+      setErrorMessage('Selecione uma data inicial e uma data final.');
+      return;
+    }
+
+    if (draftStartDate > draftEndDate) {
+      setErrorMessage('A data inicial não pode ser maior que a data final.');
+      return;
+    }
+
+    setIsLoading(true);
+    setTimeout(() => {
+      try {
+        const inPeriodEvents = events.filter(e => e.date >= draftStartDate && e.date <= draftEndDate);
+        if (inPeriodEvents.length === 0) {
+          setErrorMessage('Nenhum evento encontrado neste período.');
+          setIsLoading(false);
+          return;
+        }
+
+        setAppliedStartDate(draftStartDate);
+        setAppliedEndDate(draftEndDate);
+        setSuccessMessage('Período aplicado com sucesso.');
+        setIsLoading(false);
+      } catch (err) {
+        setErrorMessage('Erro ao carregar dados por período.');
+        setIsLoading(false);
+      }
+    }, 450);
+  };
+
+  const handleClearPeriod = () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    setDraftStartDate('');
+    setDraftEndDate('');
+    setAppliedStartDate('');
+    setAppliedEndDate('');
+    setSuccessMessage('Filtro de período limpo.');
+    setTimeout(() => {
+      setSuccessMessage('');
+    }, 3000);
+  };
+
+  const filteredBaseMembers = members.filter(m => {
+    const isActive = m.status === 'active';
+    if (!isActive) return false;
+    if (isPeriodFiltering) return true;
+    return m.managementTermId === activeTerm?.id;
+  });
+
+  const filteredBaseEvents = isPeriodFiltering
+    ? events.filter(e => e.date >= appliedStartDate && e.date <= appliedEndDate)
+    : events.filter(e => e.managementTermId === activeTerm?.id);
+
+  const eventIdsInPeriod = new Set(filteredBaseEvents.map(e => e.id));
+
+  const filteredBaseAttendances = isPeriodFiltering
+    ? attendances.filter(a => eventIdsInPeriod.has(a.eventId))
+    : attendances.filter(a => a.managementTermId === activeTerm?.id);
 
   // 1. Calculate stats for active members
-  const activeMembers = members.filter(m => m.status === 'active');
-  const computedList: MemberStats[] = activeMembers.map(m =>
-    calculateMemberStats(m, events, attendances, {
-      startDate: startDate || undefined,
-      endDate: endDate || undefined,
-      category: categoryFilter
+  const computedList: MemberStats[] = filteredBaseMembers.map(m =>
+    calculateMemberStats(m, filteredBaseEvents, filteredBaseAttendances, {
+      startDate: isPeriodFiltering ? appliedStartDate : undefined,
+      endDate: isPeriodFiltering ? appliedEndDate : undefined,
+      category: categoryFilter === 'all' ? undefined : categoryFilter
     })
   );
 
@@ -69,15 +150,13 @@ export default function ReportsPage({ members, events, attendances }: ReportsPag
     });
 
   // Calculate Chapter stats within filters
-  const selectedEvents = events.filter(e => {
+  const selectedEvents = filteredBaseEvents.filter(e => {
     const matchesCategory = categoryFilter === 'all' || e.category === categoryFilter;
-    const matchesStart = !startDate || e.date >= startDate;
-    const matchesEnd = !endDate || e.date <= endDate;
-    return matchesCategory && matchesStart && matchesEnd;
+    return matchesCategory;
   });
 
   const activeFinalizedEventsCount = selectedEvents.filter(e =>
-    attendances.some(a => a.eventId === e.id)
+    filteredBaseAttendances.some(a => a.eventId === e.id)
   ).length;
 
   // Distribution on the filtered set
@@ -88,7 +167,9 @@ export default function ReportsPage({ members, events, attendances }: ReportsPag
 
   // Export Trigger
   const handleExport = () => {
-    const filename = `relatorio_demolay_${new Date().toISOString().split('T')[0]}.csv`;
+    const filename = isPeriodFiltering
+      ? `relatorio_demolay_periodo_${appliedStartDate}_a_${appliedEndDate}.csv`
+      : `relatorio_demolay_gestao_${activeTerm?.name || 'geral'}.csv`;
     exportToCSV(filteredList, filename);
   };
 
@@ -129,22 +210,50 @@ export default function ReportsPage({ members, events, attendances }: ReportsPag
           <div>
             <strong>Filtro de Zona:</strong> {zoneFilter === 'all' ? 'Todas' : getZoneLabel(zoneFilter)}
           </div>
-          {startDate && (
+          {isPeriodFiltering && (
             <div>
-              <strong>Período analisado:</strong> {new Date(startDate + 'T12:00:00').toLocaleDateString('pt-BR')} até {endDate ? new Date(endDate + 'T12:00:00').toLocaleDateString('pt-BR') : 'Hoje'}
+              <strong>Período analisado:</strong> {formatDateBR(appliedStartDate)} até {formatDateBR(appliedEndDate)}
+            </div>
+          )}
+          {!isPeriodFiltering && activeTerm && (
+            <div>
+              <strong>Gestão ativa:</strong> Gestão {activeTerm.name}
             </div>
           )}
         </div>
       </div>
 
+      {/* Information Header on Visualization Mode */}
+      <div className="bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-center gap-2.5">
+          <span className={`w-3 h-3 rounded-full ${isPeriodFiltering ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'} shrink-0`} />
+          <div className="text-xs text-slate-700">
+            <span className="text-slate-400 uppercase tracking-wider font-bold block text-[9px]">Modo de visualização</span>
+            <span className="font-bold text-slate-900 text-sm">
+              {isPeriodFiltering ? 'Período personalizado' : 'Gestão atual'}
+            </span>
+          </div>
+        </div>
+        <div className="text-xs text-slate-700 text-center sm:text-right">
+          <span className="text-slate-400 uppercase tracking-wider font-bold block text-[9px]">
+            {isPeriodFiltering ? 'Período analisado' : 'Gestão ativa'}
+          </span>
+          <span className="font-mono font-black text-slate-950 text-sm">
+            {isPeriodFiltering 
+              ? `${formatDateBR(appliedStartDate)} a ${formatDateBR(appliedEndDate)}`
+              : activeTerm?.name ? `Gestão ${activeTerm.name}` : 'Nenhuma gestão ativa'}
+          </span>
+        </div>
+      </div>
+
       {/* 1. Filter configuration box */}
-      <div className="no-print bg-white p-5 rounded-xl border border-slate-205 shadow-xs space-y-4">
+      <div className="no-print bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
         <h4 className="text-sm font-bold font-display text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
           <Layers className="h-4.5 w-4.5 text-slate-400" />
           Filtros de Consolidação dos Relatórios
         </h4>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Category */}
           <div>
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
@@ -180,64 +289,108 @@ export default function ReportsPage({ members, events, attendances }: ReportsPag
               <option value="red">Apenas Zona Vermelha</option>
             </select>
           </div>
-
-          {/* Start Date */}
-          <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-              Início Período
-            </label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={e => setStartDate(e.target.value)}
-              className="w-full border border-slate-300 rounded-lg p-2 py-1.5 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:bg-white"
-            />
-          </div>
-
-          {/* End Date */}
-          <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-              Término Período
-            </label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={e => setEndDate(e.target.value)}
-              className="w-full border border-slate-300 rounded-lg p-2 py-1.5 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:bg-white"
-            />
-          </div>
         </div>
 
-        <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 flex-wrap">
-          {(startDate || endDate || categoryFilter !== 'all' || zoneFilter !== 'all') && (
-            <button
-              onClick={() => {
-                setCategoryFilter('all');
-                setZoneFilter('all');
-                setStartDate('');
-                setEndDate('');
-              }}
-              className="px-4 py-2 border border-slate-300 text-slate-650 hover:bg-slate-50 rounded-lg text-xs font-semibold cursor-pointer"
-            >
-              Resetar Filtros
-            </button>
+        {/* Date Ranges (Period search) */}
+        <div className="pt-4 border-t border-slate-100 space-y-4">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+            <Calendar className="h-4 w-4" /> Filtrar por período
+          </span>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                Data Inicial
+              </label>
+              <input
+                type="date"
+                value={draftStartDate}
+                onChange={e => setDraftStartDate(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg p-2.5 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:bg-white font-medium"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                Data Final
+              </label>
+              <input
+                type="date"
+                value={draftEndDate}
+                onChange={e => setDraftEndDate(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg p-2.5 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:bg-white font-medium"
+              />
+            </div>
+          </div>
+
+          {errorMessage && (
+            <div id="report-filter-error" className="bg-rose-50 border border-rose-200 text-rose-850 text-xs rounded-lg p-3 font-semibold">
+              {errorMessage}
+            </div>
           )}
 
-          <button
-            onClick={handleExport}
-            className="inline-flex items-center gap-1.5 px-4.5 py-2 hover:bg-slate-105 border border-slate-300 rounded-lg text-xs font-bold text-slate-700 bg-white shadow-xs transition cursor-pointer"
-          >
-            <Download className="h-4 w-4 text-slate-500" />
-            Exportar planilha (CSV)
-          </button>
+          {successMessage && (
+            <div id="report-filter-success" className="bg-emerald-50 border border-emerald-200 text-emerald-850 text-xs rounded-lg p-3 font-semibold animate-pulse-once">
+              {successMessage}
+            </div>
+          )}
 
-          <button
-            onClick={handlePrint}
-            className="inline-flex items-center gap-1.5 px-4.5 py-2 border border-transparent rounded-lg text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 shadow-xs transition cursor-pointer"
-          >
-            <Printer className="h-4 w-4 text-slate-400" />
-            Imprimir Relatório
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2.5 items-center justify-between pt-2 border-t border-slate-100">
+            <div className="flex gap-2.5 w-full sm:w-auto">
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={handleApplyPeriod}
+                className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2.5 px-4 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+              >
+                {isLoading ? 'Aplicando período...' : 'Aplicar período'}
+              </button>
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={handleClearPeriod}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 px-4 rounded-lg border border-slate-300 transition disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                Limpar período
+              </button>
+            </div>
+
+            <div className="flex justify-end gap-3 flex-wrap w-full sm:w-auto mt-3 sm:mt-0">
+              {(categoryFilter !== 'all' || zoneFilter !== 'all' || draftStartDate || draftEndDate || appliedStartDate || appliedEndDate) && (
+                <button
+                  onClick={() => {
+                    setCategoryFilter('all');
+                    setZoneFilter('all');
+                    setDraftStartDate('');
+                    setDraftEndDate('');
+                    setAppliedStartDate('');
+                    setAppliedEndDate('');
+                    setErrorMessage('');
+                    setSuccessMessage('');
+                  }}
+                  className="px-4 py-2 border border-slate-300 text-slate-650 hover:bg-slate-50 rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Resetar Todos os Filtros
+                </button>
+              )}
+
+              <button
+                onClick={handleExport}
+                className="inline-flex items-center gap-1.5 px-4.5 py-2 hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-bold text-slate-700 bg-white shadow-xs transition cursor-pointer"
+              >
+                <Download className="h-4 w-4 text-slate-500" />
+                Exportar planilha (CSV)
+              </button>
+
+              <button
+                onClick={handlePrint}
+                className="inline-flex items-center gap-1.5 px-4.5 py-2 border border-transparent rounded-lg text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 shadow-xs transition cursor-pointer"
+              >
+                <Printer className="h-4 w-4 text-slate-400" />
+                Imprimir Relatório
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

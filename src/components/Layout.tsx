@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useManagementTerm } from '../contexts/ManagementTermContext';
 import {
   Shield,
   LayoutDashboard,
@@ -11,9 +13,12 @@ import {
   LogOut,
   Menu,
   X,
-  Database
+  Database,
+  AlertTriangle,
+  CheckCircle
 } from 'lucide-react';
 import { User } from '../types';
+import { canEditCurrentManagementTerm } from '../utils/permission';
 
 interface LayoutProps {
   currentUser: User;
@@ -30,6 +35,8 @@ export default function Layout({
   setActiveTab,
   children
 }: LayoutProps) {
+  const navigate = useNavigate();
+  const { activeTerm } = useManagementTerm();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const menuItems = [
@@ -41,7 +48,8 @@ export default function Layout({
     { id: 'classificacao', label: 'Classificação', icon: Trophy, roles: ['admin', 'diretoria', 'visualizacao'] },
     { id: 'relatorios', label: 'Relatórios', icon: FileText, roles: ['admin', 'diretoria', 'visualizacao'] },
     { id: 'database', label: 'Banco Supabase', icon: Database, roles: ['admin'] },
-    { id: 'usuarios', label: 'Usuários', icon: UserCircle, roles: ['admin', 'diretoria'] }
+    { id: 'usuarios', label: 'Usuários', icon: UserCircle, roles: ['admin', 'diretoria'] },
+    { id: 'gestoes', label: 'Gestões', icon: Calendar, roles: ['admin'] }
   ];
 
   const filteredMenuItems = menuItems.filter(item => item.roles.includes(currentUser.role));
@@ -155,11 +163,30 @@ export default function Layout({
 
             {/* Current user summary */}
             <div className="py-4 border-b border-slate-800">
-              <p className="text-xs text-slate-405" style={{ color: '#94a3b8' }}>Usuário conectado</p>
+              <p className="text-xs text-slate-400" style={{ color: '#94a3b8' }}>Usuário conectado</p>
               <p className="font-semibold text-sm truncate mt-0.5">{currentUser.name}</p>
-              <span className={`inline-flex items-center mt-1 px-2 py-0.5 rounded text-[10px] font-bold border ${roleInfo.classes}`}>
-                {roleInfo.label}
-              </span>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${roleInfo.classes}`}>
+                  {roleInfo.label}
+                </span>
+                {activeTerm && (
+                  <span className="inline-flex items-center bg-indigo-900/50 border border-indigo-700/60 px-2 py-0.5 rounded text-[10px] font-mono font-bold text-indigo-200">
+                    S: {activeTerm.name}
+                  </span>
+                )}
+              </div>
+              {activeTerm && (
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    navigate('/admin/selecionar-gestao');
+                  }}
+                  className="mt-3 w-full bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Calendar className="h-3.5 w-3.5" />
+                  Trocar Gestão
+                </button>
+              )}
             </div>
 
             <div className="flex-1 py-4 space-y-1 overflow-y-auto">
@@ -217,12 +244,27 @@ export default function Layout({
                 activeTab === 'classificacao' ? 'Classificação' :
                 activeTab === 'relatorios' ? 'Relatórios' :
                 activeTab === 'usuarios' ? 'Usuários' :
+                activeTab === 'gestoes' ? 'Gestões' :
                 activeTab
               }
             </h2>
             <span className="text-slate-400 text-xs font-medium">• Gestão de Presença Capítulo</span>
           </div>
           <div className="flex items-center gap-4">
+            {activeTerm && (
+              <div className="bg-indigo-50 border border-indigo-150 rounded-lg px-3 py-1 flex items-center gap-2 shadow-xs shrink-0 select-none">
+                <span className="text-xs text-indigo-850 font-sans font-medium flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0"></span>
+                  Gestão atual: <strong className="font-mono font-bold text-indigo-950">{activeTerm.name}</strong>
+                </span>
+                <button
+                  onClick={() => navigate('/admin/selecionar-gestao')}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] uppercase tracking-wider px-2 py-1 rounded transition-all duration-150 cursor-pointer"
+                >
+                  Trocar gestão
+                </button>
+              </div>
+            )}
             <div className="text-right">
               <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Período Letivo</p>
               <p className="text-xs font-semibold text-slate-700">
@@ -234,6 +276,25 @@ export default function Layout({
 
         {/* Child Pages Router Container - Scroll locked body */}
         <div className="flex-1 p-6 md:p-8 space-y-6 overflow-y-auto bg-slate-50">
+          {/* Management Term Active Warning / Success Banner */}
+          {activeTerm && (
+            canEditCurrentManagementTerm(currentUser, activeTerm) ? (
+              <div className="no-print bg-emerald-50 border border-emerald-200/60 p-3 rounded-lg text-emerald-900 text-xs font-semibold flex items-center gap-2 shadow-xs mb-3">
+                <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+                <p className="leading-relaxed font-sans text-[11px] text-emerald-850">
+                  Você está lançando dados na gestão: <strong className="text-emerald-950 font-mono font-bold">{activeTerm.name}</strong>
+                </p>
+              </div>
+            ) : (
+              <div className="no-print bg-amber-50 border border-amber-200/60 p-3 rounded-lg text-amber-900 text-xs font-semibold flex items-center gap-2 shadow-xs mb-3">
+                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                <p className="leading-relaxed font-sans text-[11px] text-amber-850">
+                  Você está visualizando uma gestão fora da sua permissão de edição. Nesta gestão, seu acesso é somente leitura.
+                </p>
+              </div>
+            )
+          )}
+
           {/* Supabase Database Sync Status Notice */}
           {currentUser.role === 'admin' && (
             <div className="no-print bg-indigo-50 border border-indigo-200/60 p-3 rounded-lg text-indigo-900 text-xs font-semibold flex items-center justify-between gap-2 shadow-xs mb-3">

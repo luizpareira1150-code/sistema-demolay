@@ -1,4 +1,4 @@
-import { Member, Event, Attendance, User, EventCategory, EventPhoto } from '../types';
+import { Member, Event, Attendance, User, EventCategory, EventPhoto, ManagementTerm } from '../types';
 import { defaultMembers, defaultEvents, defaultAttendances, defaultUsers } from '../data/defaultData';
 
 const KEYS = {
@@ -8,7 +8,9 @@ const KEYS = {
   USERS: 'demolay_users',
   CURRENT_USER: 'demolay_current_user',
   MIGRATION_VERSION: 'demolay_migration_version',
-  PHOTOS: 'demolay_event_photos'
+  PHOTOS: 'demolay_event_photos',
+  MANAGEMENT_TERMS: 'demolay_management_terms',
+  ACTIVE_MANAGEMENT_TERM: 'demolay_active_management_term',
 };
 
 export function getEventCategoryPreset(category: EventCategory): {
@@ -138,6 +140,26 @@ export const getMembers = (): Member[] => {
     }
     if (!copy.status) {
       copy.status = 'active';
+      migrated = true;
+    }
+    if (!copy.evaluationStartDate) {
+      if (copy.joinedAt) {
+        copy.evaluationStartDate = copy.joinedAt;
+      } else if (copy.managementTermId) {
+        const terms = getLocalManagementTerms();
+        const foundTerm = terms.find(t => t.id === copy.managementTermId);
+        if (foundTerm && foundTerm.startDate) {
+          copy.evaluationStartDate = foundTerm.startDate;
+        }
+      }
+      
+      if (!copy.evaluationStartDate) {
+        if (copy.createdAt) {
+          copy.evaluationStartDate = copy.createdAt.split('T')[0];
+        } else {
+          copy.evaluationStartDate = new Date().toISOString().split('T')[0];
+        }
+      }
       migrated = true;
     }
     return copy as Member;
@@ -337,4 +359,36 @@ export const getEventPhotos = (): EventPhoto[] => {
 
 export const saveEventPhotos = (photos: EventPhoto[]): void => {
   localStorage.setItem(KEYS.PHOTOS, JSON.stringify(photos));
+};
+
+export const getLocalManagementTerms = (): ManagementTerm[] => {
+  const data = localStorage.getItem(KEYS.MANAGEMENT_TERMS);
+  if (!data) return [];
+  try {
+    return JSON.parse(data);
+  } catch (e) {
+    return [];
+  }
+};
+
+export const saveLocalManagementTerms = (terms: ManagementTerm[]): void => {
+  localStorage.setItem(KEYS.MANAGEMENT_TERMS, JSON.stringify(terms));
+};
+
+export const getActiveManagementTerm = (): ManagementTerm | null => {
+  const data = localStorage.getItem(KEYS.ACTIVE_MANAGEMENT_TERM);
+  if (!data) return null;
+  try {
+    return JSON.parse(data);
+  } catch (e) {
+    return null;
+  }
+};
+
+export const saveActiveManagementTerm = (term: ManagementTerm | null): void => {
+  if (term) {
+    localStorage.setItem(KEYS.ACTIVE_MANAGEMENT_TERM, JSON.stringify(term));
+  } else {
+    localStorage.removeItem(KEYS.ACTIVE_MANAGEMENT_TERM);
+  }
 };

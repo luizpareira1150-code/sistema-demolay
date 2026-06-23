@@ -26,6 +26,9 @@ import UsersPage from './pages/UsersPage';
 import NominataPage from './pages/NominataPage';
 import PublicRankingPage from './pages/PublicRankingPage';
 import DatabaseSyncPage from './pages/DatabaseSyncPage';
+import ManagementTermsPage from './pages/ManagementTermsPage';
+import SelectManagementTermPage from './pages/SelectManagementTermPage';
+import { ManagementTermProvider, useManagementTerm } from './contexts/ManagementTermContext';
 
 // Import Supabase Integration triggers and sync helpers
 import { checkSupabaseConnection } from './utils/supabaseClient';
@@ -48,7 +51,23 @@ import MemberProfileModal from './components/MemberProfileModal';
 
 function AppContent() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { activeTerm, setActiveTerm } = useManagementTerm();
   const [currentUser, setCurrentUser] = useState<User | null>(() => getCurrentUser());
+
+  // Redirect guard: if user is logged in, has not selected an active management term yet,
+  // is trying to navigate to an administrative sub-route, and is NOT on the selection page.
+  useEffect(() => {
+    if (
+      currentUser &&
+      !activeTerm &&
+      location.pathname.startsWith('/admin') &&
+      location.pathname !== '/admin/selecionar-gestao' &&
+      location.pathname !== '/admin'
+    ) {
+      navigate('/admin/selecionar-gestao', { replace: true });
+    }
+  }, [currentUser, activeTerm, location.pathname, navigate]);
 
   // Shared application states
   const [members, setMembers] = useState<Member[]>(() => {
@@ -138,12 +157,13 @@ function AppContent() {
   // 2. Auth handlers
   const handleLoginSuccess = (user: User) => {
     setCurrentUser(user);
-    navigate('/admin/dashboard', { replace: true });
+    navigate('/admin/selecionar-gestao', { replace: true });
   };
 
   const handleLogout = () => {
     saveCurrentUser(null);
     setCurrentUser(null);
+    setActiveTerm(null);
     navigate('/admin', { replace: true });
   };
 
@@ -152,7 +172,8 @@ function AppContent() {
     const created: Member = {
       ...newMember,
       id: 'm_' + Date.now(),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      managementTermId: activeTerm?.id || undefined
     };
     const updated = [...members, created];
     setMembers(updated);
@@ -161,10 +182,14 @@ function AppContent() {
   };
 
   const handleUpdateMember = (updatedMember: Member) => {
-    const updated = members.map(m => (m.id === updatedMember.id ? updatedMember : m));
+    const created: Member = {
+      ...updatedMember,
+      managementTermId: updatedMember.managementTermId || activeTerm?.id || undefined
+    };
+    const updated = members.map(m => (m.id === created.id ? created : m));
     setMembers(updated);
     saveMembers(updated);
-    pushMemberToSupabase(updatedMember); // Background cloud push
+    pushMemberToSupabase(created); // Background cloud push
   };
 
   const handleDeleteMember = (id: string) => {
@@ -186,7 +211,8 @@ function AppContent() {
     const created: Event = {
       ...newEvent,
       id: 'e_' + Date.now(),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      managementTermId: activeTerm?.id || undefined
     };
     const updated = [...events, created];
     setEvents(updated);
@@ -195,10 +221,14 @@ function AppContent() {
   };
 
   const handleUpdateEvent = (updatedEvent: Event) => {
-    const updated = events.map(e => (e.id === updatedEvent.id ? updatedEvent : e));
+    const created: Event = {
+      ...updatedEvent,
+      managementTermId: updatedEvent.managementTermId || activeTerm?.id || undefined
+    };
+    const updated = events.map(e => (e.id === created.id ? created : e));
     setEvents(updated);
     saveEvents(updated);
-    pushEventToSupabase(updatedEvent); // Background cloud push
+    pushEventToSupabase(created); // Background cloud push
   };
 
   const handleDeleteEvent = (id: string) => {
@@ -220,10 +250,11 @@ function AppContent() {
     // Purge existing attendances matching eventId
     const baseList = attendances.filter(a => a.eventId !== eventId);
 
-    // Map new list with ids
+    // Map new list with ids and managementTermId
     const appendList: Attendance[] = updatedList.map((item, idx) => ({
       ...item,
-      id: `a_${eventId}_${idx}_${Date.now()}`
+      id: `a_${eventId}_${idx}_${Date.now()}`,
+      managementTermId: activeTerm?.id || undefined
     }));
 
     const final = [...baseList, ...appendList];
@@ -240,8 +271,33 @@ function AppContent() {
 
   // 6. User CRUD triggers (Admin only) with Supabase Sync
   const handleAddUser = (newUser: Omit<User, 'id'>) => {
+    if (!currentUser) return;
+
+    let finalRole = newUser.role;
+    let finalManagementTermId = newUser.managementTermId;
+
+    if (currentUser.role === 'admin') {
+      if (finalRole === 'diretoria' && !finalManagementTermId) {
+        alert('Selecione uma gestão para esta conta de Diretoria.');
+        return;
+      }
+    } else if (currentUser.role === 'diretoria') {
+      if (!currentUser.managementTermId) {
+        alert('Sua conta de Diretoria não está vinculada a uma gestão. Procure um administrador.');
+        return;
+      }
+      finalRole = 'diretoria';
+      finalManagementTermId = currentUser.managementTermId;
+    } else if (currentUser.role === 'visualizacao') {
+      alert('Ação não permitida para este perfil.');
+      return;
+    }
+
     const created: User = {
       ...newUser,
+      role: finalRole,
+      managementTermId: finalManagementTermId,
+      createdBy: currentUser.id,
       id: 'u_' + Date.now()
     };
     const updated = [...users, created];
@@ -251,15 +307,63 @@ function AppContent() {
   };
 
   const handleUpdateUser = (updatedUser: User) => {
-    const updated = users.map(u => (u.id === updatedUser.id ? updatedUser : u));
+    if (!currentUser) return;
+
+    let finalRole = updatedUser.role;
+    let finalManagementTermId = updatedUser.managementTermId;
+
+    if (currentUser.role === 'admin') {
+      if (finalRole === 'diretoria' && !finalManagementTermId) {
+        alert('Selecione uma gestão para esta conta de Diretoria.');
+        return;
+      }
+    } else if (currentUser.role === 'diretoria') {
+      if (!currentUser.managementTermId) {
+        alert('Sua conta de Diretoria não está vinculada a uma gestão. Procure um administrador.');
+        return;
+      }
+      finalRole = 'diretoria';
+      finalManagementTermId = currentUser.managementTermId;
+    } else if (currentUser.role === 'visualizacao') {
+      alert('Ação não permitida para este perfil.');
+      return;
+    }
+
+    const boundUser: User = {
+      ...updatedUser,
+      role: finalRole,
+      managementTermId: finalManagementTermId
+    };
+
+    const updated = users.map(u => (u.id === boundUser.id ? boundUser : u));
     setUsers(updated);
     saveUsers(updated);
-    pushUserToSupabase(updatedUser); // Background cloud push
+    pushUserToSupabase(boundUser); // Background cloud push
   };
 
   const handleDeleteUser = (id: string) => {
+    if (!currentUser) return;
+    if (currentUser.role === 'visualizacao') {
+      alert('Ação não permitida para este perfil.');
+      return;
+    }
+    const target = users.find(u => u.id === id);
+    if (!target) return;
+
+    if (currentUser.role === 'diretoria') {
+      if (target.role === 'admin') {
+        alert('A Diretoria não tem permissão para remover administradores do sistema.');
+        return;
+      }
+      if (target.managementTermId !== currentUser.managementTermId) {
+        alert('A Diretoria não tem permissão para remover usuários de outras gestões.');
+        return;
+      }
+    }
+
     // Block deleting themselves is handled at page, but let's safeguard too
-    if (currentUser && currentUser.id === id) return;
+    if (currentUser.id === id) return;
+
     const updated = users.filter(u => u.id !== id);
     setUsers(updated);
     saveUsers(updated);
@@ -271,6 +375,19 @@ function AppContent() {
     setSelectedEventForAttendance(event);
     navigate('/admin/presencas');
   };
+
+  // Filtered lists according to the active/selected management term
+  const filteredMembers = activeTerm 
+    ? members.filter(m => m.managementTermId === activeTerm.id)
+    : members;
+
+  const filteredEvents = activeTerm
+    ? events.filter(e => e.managementTermId === activeTerm.id)
+    : events;
+
+  const filteredAttendances = activeTerm
+    ? attendances.filter(a => a.managementTermId === activeTerm.id)
+    : attendances;
 
   return (
     <>
@@ -315,9 +432,9 @@ function AppContent() {
                 setActiveTab={(tab) => navigate(`/admin/${tab}`)}
               >
                 <DashboardPage
-                  members={members}
-                  events={events}
-                  attendances={attendances}
+                  members={filteredMembers}
+                  events={filteredEvents}
+                  attendances={filteredAttendances}
                   onNavigateToTab={(tab) => navigate(`/admin/${tab}`)}
                   onViewMember={(member) => setSelectedMemberModal(member)}
                 />
@@ -340,7 +457,7 @@ function AppContent() {
                 setActiveTab={(tab) => navigate(`/admin/${tab}`)}
               >
                 <MembersPage
-                  members={members}
+                  members={filteredMembers}
                   currentUser={currentUser}
                   onAddMember={handleAddMember}
                   onUpdateMember={handleUpdateMember}
@@ -366,11 +483,20 @@ function AppContent() {
                 setActiveTab={(tab) => navigate(`/admin/${tab}`)}
               >
                 <NominataPage
-                  members={members}
+                  members={filteredMembers}
                   currentUser={currentUser}
                   onUpdateMembers={(updatedMembersList) => {
-                    setMembers(updatedMembersList);
-                    saveMembers(updatedMembersList);
+                    // Update full list but merge changes gracefully
+                    const updatedFullMembers = members.map(m => {
+                      const match = updatedMembersList.find(um => um.id === m.id);
+                      return match ? match : m;
+                    });
+                    setMembers(updatedFullMembers);
+                    saveMembers(updatedFullMembers);
+                    // Push updated members to Supabase background sync
+                    updatedMembersList.forEach(m => {
+                      pushMemberToSupabase(m);
+                    });
                   }}
                 />
               </Layout>
@@ -392,7 +518,7 @@ function AppContent() {
                 setActiveTab={(tab) => navigate(`/admin/${tab}`)}
               >
                 <EventsPage
-                  events={events}
+                  events={filteredEvents}
                   currentUser={currentUser}
                   onAddEvent={handleAddEvent}
                   onUpdateEvent={handleUpdateEvent}
@@ -418,9 +544,9 @@ function AppContent() {
                 setActiveTab={(tab) => navigate(`/admin/${tab}`)}
               >
                 <AttendancePage
-                  events={events}
-                  members={members}
-                  attendances={attendances}
+                  events={filteredEvents}
+                  members={filteredMembers}
+                  attendances={filteredAttendances}
                   currentUser={currentUser}
                   onSaveAttendances={handleSaveAttendances}
                   selectedEvent={selectedEventForAttendance}
@@ -540,6 +666,46 @@ function AppContent() {
           }
         />
 
+        {/* Management Selection Route */}
+        <Route
+          path="/admin/selecionar-gestao"
+          element={
+            currentUser ? (
+              <SelectManagementTermPage currentUser={currentUser} onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/admin" replace />
+            )
+          }
+        />
+
+        {/* Gestões Semester Management Route */}
+        <Route
+          path="/admin/gestoes"
+          element={
+            currentUser ? (
+              currentUser.role === 'admin' ? (
+                <Layout
+                  currentUser={currentUser}
+                  onLogout={handleLogout}
+                  activeTab="gestoes"
+                  setActiveTab={(tab) => navigate(`/admin/${tab}`)}
+                >
+                  <ManagementTermsPage
+                    currentUser={currentUser}
+                    onRefreshData={() => {
+                      setUsers(getUsers());
+                    }}
+                  />
+                </Layout>
+              ) : (
+                <Navigate to="/admin/dashboard" replace />
+              )
+            ) : (
+              <Navigate to="/admin" replace />
+            )
+          }
+        />
+
         {/* Catch-all fallback redirectional match */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
@@ -548,8 +714,8 @@ function AppContent() {
       {selectedMemberModal && (
         <MemberProfileModal
           member={selectedMemberModal}
-          events={events}
-          attendances={attendances}
+          events={filteredEvents}
+          attendances={filteredAttendances}
           onClose={() => setSelectedMemberModal(null)}
         />
       )}
@@ -560,7 +726,9 @@ function AppContent() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AppContent />
+      <ManagementTermProvider>
+        <AppContent />
+      </ManagementTermProvider>
     </BrowserRouter>
   );
 }

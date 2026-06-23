@@ -14,6 +14,8 @@ export interface Member {
   nominataIniciacaoRole?: string;
   isNominataElevacao?: boolean;
   nominataElevacaoRole?: string;
+  managementTermId?: string;
+  evaluationStartDate: string;
 }
 
 export type EventCategory = 
@@ -36,6 +38,7 @@ export interface Event {
   requiredFor: Array<'iniciatico' | 'demolay' | 'nominata'>;
   optionalFor: Array<'iniciatico' | 'demolay' | 'nominata'>;
   nominataType?: 'diretoria' | 'iniciacao' | 'elevacao' | 'none';
+  managementTermId?: string;
 }
 
 export type AttendanceStatus = 'present' | 'absent' | 'justified' | 'not_attended' | 'not_applicable';
@@ -47,6 +50,7 @@ export interface Attendance {
   status: AttendanceStatus;
   note: string;
   eligibility?: 'required' | 'optional' | 'not_applicable';
+  managementTermId?: string;
 }
 
 export type UserRole = 'admin' | 'diretoria' | 'visualizacao';
@@ -64,6 +68,20 @@ export interface User {
   email: string;
   password: string;
   role: UserRole;
+  managementTermId?: string;
+  createdBy?: string;
+}
+
+export interface ManagementTerm {
+  id: string;
+  name: string;
+  year: number;
+  semester: 1 | 2;
+  startDate: string;
+  endDate: string;
+  status: 'active' | 'archived';
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface MemberStats {
@@ -92,4 +110,6 @@ export interface MemberStats {
   consideredEvents: number; // Backward-compatibility (mapped to requiredEventsConsidered)
   hasConsideredEvents: boolean;
   zone: 'green' | 'yellow' | 'red';
+  evaluationStartDate?: string;
+  ignoredEventsBeforeEvaluationStart?: number;
 }

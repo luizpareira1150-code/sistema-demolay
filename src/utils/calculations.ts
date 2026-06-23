@@ -79,8 +79,15 @@ export function calculateMemberStats(
   let requiredAbsences = 0;
   let requiredJustifications = 0;
   let extraParticipations = 0;
+  let ignoredEventsBeforeEvaluationStart = 0;
 
   for (const event of finalizedEvents) {
+    const isAfterEvaluationStart = !member.evaluationStartDate || event.date >= member.evaluationStartDate;
+    if (!isAfterEvaluationStart) {
+      ignoredEventsBeforeEvaluationStart++;
+      continue;
+    }
+
     const eligibility = getMemberEligibility(member, event);
     const attendance = attendances.find(a => a.eventId === event.id && a.memberId === member.id);
 
@@ -149,6 +156,8 @@ export function calculateMemberStats(
     degree: member.degree ?? 'iniciatico',
     isNominata: member.isNominata ?? false,
     nominataRole: member.nominataRole,
+    evaluationStartDate: member.evaluationStartDate,
+    ignoredEventsBeforeEvaluationStart,
 
     requiredPresences,
     requiredAbsences,

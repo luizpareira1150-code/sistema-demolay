@@ -9,8 +9,10 @@ import {
 } from 'lucide-react';
 import { Event, EventCategory, User } from '../types';
 import { CATEGORY_LABELS } from '../utils/calculations';
-import { getEventCategoryPreset } from '../utils/storage';
+import { getEventCategoryPreset, getLocalManagementTerms } from '../utils/storage';
 import { useNotification } from '../components/NotificationContext';
+import { useManagementTerm } from '../contexts/ManagementTermContext';
+import { canEditCurrentManagementTerm } from '../utils/permission';
 import Button from '../components/Button';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -33,9 +35,12 @@ export default function EventsPage({
 }: EventsPageProps) {
   const { showNotification } = useNotification();
 
+  const { activeTerm } = useManagementTerm();
+  const canEditTerm = canEditCurrentManagementTerm(currentUser, activeTerm);
+
   // Permission checks
-  const canModify = currentUser.role === 'admin' || currentUser.role === 'diretoria';
-  const canDelete = currentUser.role === 'admin' || currentUser.role === 'diretoria';
+  const canModify = (currentUser.role === 'admin' || currentUser.role === 'diretoria') && canEditTerm;
+  const canDelete = (currentUser.role === 'admin' || currentUser.role === 'diretoria') && canEditTerm;
 
   // Filters state
   const [categoryFilter, setCategoryFilter] = useState<EventCategory | 'all'>('all');

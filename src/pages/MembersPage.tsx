@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { Member, MemberStatus, User } from '../types';
 import { useNotification } from '../components/NotificationContext';
+import { useManagementTerm } from '../contexts/ManagementTermContext';
+import { canEditCurrentManagementTerm } from '../utils/permission';
 import Button from '../components/Button';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -48,9 +50,12 @@ export default function MembersPage({
 }: MembersPageProps) {
   const { showNotification } = useNotification();
 
+  const { activeTerm } = useManagementTerm();
+  const canEditTerm = canEditCurrentManagementTerm(currentUser, activeTerm);
+
   // Permission checks
-  const canModify = currentUser.role === 'admin' || currentUser.role === 'diretoria';
-  const canDelete = currentUser.role === 'admin' || currentUser.role === 'diretoria';
+  const canModify = (currentUser.role === 'admin' || currentUser.role === 'diretoria') && canEditTerm;
+  const canDelete = (currentUser.role === 'admin' || currentUser.role === 'diretoria') && canEditTerm;
 
   // Filters state
   const [searchTerm, setSearchTerm] = useState('');
@@ -69,6 +74,7 @@ export default function MembersPage({
   const [formName, setFormName] = useState('');
   const [formStatus, setFormStatus] = useState<MemberStatus>('active');
   const [formJoinedAt, setFormJoinedAt] = useState('');
+  const [formEvaluationStartDate, setFormEvaluationStartDate] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [formDegree, setFormDegree] = useState<'iniciatico' | 'demolay'>('iniciatico');
   const [formIsNominata, setFormIsNominata] = useState(false);
@@ -86,6 +92,7 @@ export default function MembersPage({
     setFormName('');
     setFormStatus('active');
     setFormJoinedAt(new Date().toISOString().split('T')[0]);
+    setFormEvaluationStartDate(new Date().toISOString().split('T')[0]);
     setFormNotes('');
     setFormDegree('iniciatico');
     setFormIsNominata(false);
@@ -104,6 +111,7 @@ export default function MembersPage({
     setFormName(member.name);
     setFormStatus(member.status);
     setFormJoinedAt(member.joinedAt);
+    setFormEvaluationStartDate(member.evaluationStartDate || member.joinedAt || '');
     setFormNotes(member.notes);
 
     const degree = member.degree || 'iniciatico';
@@ -142,10 +150,15 @@ export default function MembersPage({
       showNotification('warning', 'A data de admissão é obrigatória.');
       return;
     }
+    if (!formEvaluationStartDate) {
+      setFormError('Informe a data de início da avaliação.');
+      showNotification('warning', 'Informe a data de início da avaliação.');
+      return;
+    }
 
     const currentNominataRole = formIsNominata
-      ? (formNominataRoleSelect === 'Outro' ? formNominataRoleCustom.trim() : formNominataRoleSelect)
-      : undefined;
+       ? (formNominataRoleSelect === 'Outro' ? formNominataRoleCustom.trim() : formNominataRoleSelect)
+       : undefined;
 
     if (formIsNominata && formNominataRoleSelect === 'Outro' && !formNominataRoleCustom.trim()) {
       setFormError('Por favor, informe o cargo personalizado na nominata.');
@@ -166,7 +179,8 @@ export default function MembersPage({
           notes: formNotes,
           degree: formDegree,
           isNominata: formIsNominata,
-          nominataRole: currentNominataRole
+          nominataRole: currentNominataRole,
+          evaluationStartDate: formEvaluationStartDate
         });
         showNotification('success', 'Membro atualizado com sucesso.');
       } else {
@@ -178,7 +192,8 @@ export default function MembersPage({
           notes: formNotes,
           degree: formDegree,
           isNominata: formIsNominata,
-          nominataRole: currentNominataRole
+          nominataRole: currentNominataRole,
+          evaluationStartDate: formEvaluationStartDate
         });
         showNotification('success', 'Membro salvo com sucesso.');
       }
@@ -406,7 +421,10 @@ export default function MembersPage({
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-slate-550">
-                        {new Date(member.joinedAt + 'T12:00:00').toLocaleDateString('pt-BR')}
+                        <span className="block font-medium">{new Date(member.joinedAt + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                        <span className="block text-[10px] text-slate-400 mt-0.5 font-semibold">
+                          Avaliação desde: {new Date((member.evaluationStartDate || member.joinedAt || '').split('T')[0] + 'T12:00:00').toLocaleDateString('pt-BR')}
+                        </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {member.status === 'active' ? (
@@ -515,6 +533,7 @@ export default function MembersPage({
 
                 <div className="text-xs text-slate-500 space-y-1">
                   <p>Admissão: <span className="font-semibold">{new Date(member.joinedAt + 'T12:00:00').toLocaleDateString('pt-BR')}</span></p>
+                  <p>Avaliação desde: <span className="font-semibold text-slate-800">{new Date((member.evaluationStartDate || member.joinedAt || '').split('T')[0] + 'T12:00:00').toLocaleDateString('pt-BR')}</span></p>
                   {(member.isNominata ?? false) && (
                     <p className="font-medium text-amber-700">Cargo: <span className="font-bold">{member.nominataRole || 'Nominata'}</span></p>
                   )}
@@ -729,6 +748,23 @@ export default function MembersPage({
                     className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white"
                   />
                 </div>
+              </div>
+
+              {/* Data de início da avaliação */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Data de início da avaliação
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={formEvaluationStartDate}
+                  onChange={e => setFormEvaluationStartDate(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white"
+                />
+                <p className="mt-1 text-xs text-slate-550 italic font-normal leading-relaxed">
+                  A presença deste membro será calculada apenas a partir desta data. O membro só será avaliado em eventos realizados a partir dela.
+                </p>
               </div>
 
               {/* Notes */}

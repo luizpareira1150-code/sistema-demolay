@@ -97,7 +97,21 @@ export default function DatabaseSyncPage({ onSyncComplete }: DatabaseSyncPagePro
     }
   };
 
-  const sqlScript = `-- 1. CRIAR TABELA DE MEMBROS
+  const sqlScript = `-- 0. CRIAR TABELA DE GESTÕES/SEMESTRES
+CREATE TABLE IF NOT EXISTS "management_terms" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "name" TEXT NOT NULL CHECK ("name" ~ '^[0-9]{4}/[1-2]$'),
+  "year" INTEGER NOT NULL,
+  "semester" INTEGER NOT NULL CHECK ("semester" IN (1, 2)),
+  "start_date" DATE NOT NULL,
+  "end_date" DATE NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'active' CHECK ("status" IN ('active', 'archived')),
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT "management_terms_year_semester_unique" UNIQUE ("year", "semester")
+);
+
+-- 1. CRIAR TABELA DE MEMBROS
 CREATE TABLE IF NOT EXISTS "demolay_members" (
   "id" TEXT PRIMARY KEY,
   "name" TEXT NOT NULL,
@@ -111,7 +125,8 @@ CREATE TABLE IF NOT EXISTS "demolay_members" (
   "isNominataIniciacao" BOOLEAN,
   "nominataIniciacaoRole" TEXT,
   "isNominataElevacao" BOOLEAN,
-  "nominataElevacaoRole" TEXT
+  "nominataElevacaoRole" TEXT,
+  "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL
 );
 
 -- 2. CRIAR TABELA DE EVENTOS
@@ -124,7 +139,8 @@ CREATE TABLE IF NOT EXISTS "demolay_events" (
   "createdAt" TEXT,
   "requiredFor" JSONB NOT NULL DEFAULT '[]'::jsonb,
   "optionalFor" JSONB NOT NULL DEFAULT '[]'::jsonb,
-  "nominataType" TEXT DEFAULT 'none'
+  "nominataType" TEXT DEFAULT 'none',
+  "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL
 );
 
 -- 3. CRIAR TABELA DE PRESENÇAS / ATTENDANCE
@@ -134,7 +150,8 @@ CREATE TABLE IF NOT EXISTS "demolay_attendance" (
   "memberId" TEXT NOT NULL,
   "status" TEXT NOT NULL DEFAULT 'absent',
   "note" TEXT,
-  "eligibility" TEXT
+  "eligibility" TEXT,
+  "management_term_id" UUID REFERENCES "management_terms"("id") ON DELETE SET NULL
 );
 
 -- 4. CRIAR TABELA DE USUÁRIOS

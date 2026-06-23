@@ -35,6 +35,7 @@ export const SUPABASE_TABLES = {
   ATTENDANCES: 'demolay_attendance',
   USERS: 'demolay_users',
   PHOTOS: 'demolay_event_photos',
+  MANAGEMENT_TERMS: 'management_terms',
 };
 
 /**
@@ -102,3 +103,42 @@ export async function checkSupabaseConnection(): Promise<{
     };
   }
 }
+
+/**
+ * Generates a valid UUID v4 string.
+ * This is compliant with Postgres UUID column validation, avoiding non-UUID placeholders when window.crypto.randomUUID is not available in iframes.
+ */
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined') {
+    if (crypto.randomUUID) {
+      try {
+        return crypto.randomUUID();
+      } catch (e) {
+        // Fallback below
+      }
+    }
+    if (crypto.getRandomValues) {
+      try {
+        const buf = new Uint8Array(16);
+        crypto.getRandomValues(buf);
+        buf[6] = (buf[6] & 0x0f) | 0x40; // Version 4
+        buf[8] = (buf[8] & 0x3f) | 0x80; // Variant 10xx
+        const parts = [];
+        for (let i = 0; i < 16; i++) {
+          parts.push(buf[i].toString(16).padStart(2, '0'));
+        }
+        return `${parts.slice(0, 4).join('')}-${parts.slice(4, 6).join('')}-${parts.slice(6, 8).join('')}-${parts.slice(8, 10).join('')}-${parts.slice(10, 16).join('')}`;
+      } catch (e) {
+        // Fallback below
+      }
+    }
+  }
+
+  // Pure Math.random fallback
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+

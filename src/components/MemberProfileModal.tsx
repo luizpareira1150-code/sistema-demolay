@@ -93,6 +93,8 @@ export default function MemberProfileModal({
                   )}
                   <span>&bull;</span>
                   <span>Admitido em: {new Date(member.joinedAt + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                  <span>&bull;</span>
+                  <span className="text-amber-400">Data de início da avaliação: {new Date((member.evaluationStartDate || member.joinedAt || '').split('T')[0] + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
                 </div>
               </div>
             </div>

@@ -1,5 +1,5 @@
 import { supabase, SUPABASE_TABLES, checkSupabaseConnection } from './supabaseClient';
-import { Member, Event, Attendance, User, EventPhoto } from '../types';
+import { Member, Event, Attendance, User, EventPhoto, ManagementTerm } from '../types';
 import { 
   saveMembers as saveLocalMembers,
   saveEvents as saveLocalEvents,
@@ -10,7 +10,9 @@ import {
   getAttendances as getLocalAttendances,
   getUsers as getLocalUsers,
   getEventPhotos,
-  saveEventPhotos
+  saveEventPhotos,
+  getLocalManagementTerms,
+  saveLocalManagementTerms
 } from './storage';
 
 /**
@@ -33,7 +35,9 @@ export async function pushMemberToSupabase(member: Member): Promise<void> {
         isNominataIniciacao: member.isNominataIniciacao,
         nominataIniciacaoRole: member.nominataIniciacaoRole,
         isNominataElevacao: member.isNominataElevacao,
-        nominataElevacaoRole: member.nominataElevacaoRole
+        nominataElevacaoRole: member.nominataElevacaoRole,
+        management_term_id: member.managementTermId,
+        evaluation_start_date: member.evaluationStartDate
       });
     if (error) console.warn('Erro ao salvar membro no Supabase:', error.message);
   } catch (err) {
@@ -72,7 +76,8 @@ export async function pushEventToSupabase(event: Event): Promise<void> {
         createdAt: event.createdAt,
         requiredFor: event.requiredFor,
         optionalFor: event.optionalFor,
-        nominataType: event.nominataType || 'none'
+        nominataType: event.nominataType || 'none',
+        management_term_id: event.managementTermId
       });
     if (error) console.warn('Erro ao salvar evento no Supabase:', error.message);
   } catch (err) {
@@ -137,7 +142,8 @@ export async function pushAttendancesToSupabase(attendances: Attendance[]): Prom
       memberId: a.memberId,
       status: a.status,
       note: a.note || '',
-      eligibility: a.eligibility || 'not_applicable'
+      eligibility: a.eligibility || 'not_applicable',
+      management_term_id: a.managementTermId
     }));
 
     const { error } = await supabase
@@ -161,7 +167,9 @@ export async function pushUserToSupabase(user: User): Promise<void> {
         name: user.name,
         email: user.email,
         password: user.password,
-        role: user.role
+        role: user.role,
+        management_term_id: user.managementTermId,
+        created_by: user.createdBy
       });
     if (error) console.warn('Erro ao salvar usuário no Supabase:', error.message);
   } catch (err) {
@@ -250,7 +258,9 @@ export async function uploadLocalToSupabase(): Promise<{ success: boolean; messa
         isNominataIniciacao: member.isNominataIniciacao,
         nominataIniciacaoRole: member.nominataIniciacaoRole,
         isNominataElevacao: member.isNominataElevacao,
-        nominataElevacaoRole: member.nominataElevacaoRole
+        nominataElevacaoRole: member.nominataElevacaoRole,
+        management_term_id: member.managementTermId,
+        evaluation_start_date: member.evaluationStartDate
       }));
       const { error } = await supabase.from(SUPABASE_TABLES.MEMBERS).upsert(rows);
       if (error) throw new Error(`Membros: ${error.message}`);
@@ -267,7 +277,8 @@ export async function uploadLocalToSupabase(): Promise<{ success: boolean; messa
         createdAt: event.createdAt,
         requiredFor: event.requiredFor,
         optionalFor: event.optionalFor,
-        nominataType: event.nominataType || 'none'
+        nominataType: event.nominataType || 'none',
+        management_term_id: event.managementTermId
       }));
       const { error } = await supabase.from(SUPABASE_TABLES.EVENTS).upsert(rows);
       if (error) throw new Error(`Eventos: ${error.message}`);
@@ -281,7 +292,8 @@ export async function uploadLocalToSupabase(): Promise<{ success: boolean; messa
         memberId: a.memberId,
         status: a.status,
         note: a.note || '',
-        eligibility: a.eligibility || 'not_applicable'
+        eligibility: a.eligibility || 'not_applicable',
+        management_term_id: a.managementTermId
       }));
       const { error } = await supabase.from(SUPABASE_TABLES.ATTENDANCES).upsert(rows);
       if (error) throw new Error(`Presenças: ${error.message}`);
@@ -294,7 +306,9 @@ export async function uploadLocalToSupabase(): Promise<{ success: boolean; messa
         name: user.name,
         email: user.email,
         password: user.password,
-        role: user.role
+        role: user.role,
+        management_term_id: user.managementTermId,
+        created_by: user.createdBy
       }));
       const { error } = await supabase.from(SUPABASE_TABLES.USERS).upsert(rows);
       if (error) throw new Error(`Usuários: ${error.message}`);
@@ -324,7 +338,7 @@ export async function uploadLocalToSupabase(): Promise<{ success: boolean; messa
 /**
  * Downloads all data from Supabase and replaces local storage.
  */
-export async function downloadSupabaseToLocal(): Promise<{ success: boolean; message: string; data?: { members: Member[]; events: Event[]; attendances: Attendance[]; users: User[] } }> {
+export async function downloadSupabaseToLocal(): Promise<{ success: boolean; message: string; data?: { members: Member[]; events: Event[]; attendances: Attendance[]; users: User[]; managementTerms: ManagementTerm[] } }> {
   try {
     // 1. Fetch Members
     const membersRes = await supabase.from(SUPABASE_TABLES.MEMBERS).select('*');
@@ -342,7 +356,33 @@ export async function downloadSupabaseToLocal(): Promise<{ success: boolean; mes
     const usersRes = await supabase.from(SUPABASE_TABLES.USERS).select('*');
     if (usersRes.error) throw new Error(`Erro ao buscar Usuários: ${usersRes.error.message}`);
 
-    // 5. Fetch Photos (Non-blocking fallback to keep the sync resilient)
+    // 5. Fetch Management Terms
+    let fetchedManagementTerms: ManagementTerm[] = [];
+    let termLoadError = false;
+    try {
+      const termsRes = await supabase.from(SUPABASE_TABLES.MANAGEMENT_TERMS).select('*');
+      if (termsRes.error) {
+        console.warn('Erro ao baixar gestões do Supabase:', termsRes.error.message);
+        termLoadError = true;
+      } else if (termsRes.data) {
+        fetchedManagementTerms = termsRes.data.map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          year: t.year,
+          semester: t.semester,
+          startDate: t.start_date,
+          endDate: t.end_date,
+          status: t.status,
+          createdAt: t.created_at,
+          updatedAt: t.updated_at
+        }));
+      }
+    } catch (termErr) {
+      console.warn('Erro não-crítico ao baixar gestões do Supabase:', termErr);
+      termLoadError = true;
+    }
+
+    // 6. Fetch Photos (Non-blocking fallback to keep the sync resilient)
     let fetchedPhotos: EventPhoto[] = [];
     try {
       const photosRes = await supabase.from(SUPABASE_TABLES.PHOTOS).select('*');
@@ -371,7 +411,9 @@ export async function downloadSupabaseToLocal(): Promise<{ success: boolean; mes
       isNominataIniciacao: m.isNominataIniciacao ?? false,
       nominataIniciacaoRole: m.nominataIniciacaoRole || '',
       isNominataElevacao: m.isNominataElevacao ?? false,
-      nominataElevacaoRole: m.nominataElevacaoRole || ''
+      nominataElevacaoRole: m.nominataElevacaoRole || '',
+      managementTermId: m.management_term_id || undefined,
+      evaluationStartDate: m.evaluation_start_date || m.joinedAt || m.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0]
     }));
 
     const fetchedEvents: Event[] = (eventsRes.data || []).map(e => ({
@@ -383,7 +425,8 @@ export async function downloadSupabaseToLocal(): Promise<{ success: boolean; mes
       createdAt: e.createdAt || '',
       requiredFor: Array.isArray(e.requiredFor) ? e.requiredFor : [],
       optionalFor: Array.isArray(e.optionalFor) ? e.optionalFor : [],
-      nominataType: e.nominataType || 'none'
+      nominataType: e.nominataType || 'none',
+      managementTermId: e.management_term_id || undefined
     }));
 
     const fetchedAttendances: Attendance[] = (attendancesRes.data || []).map(a => ({
@@ -392,7 +435,8 @@ export async function downloadSupabaseToLocal(): Promise<{ success: boolean; mes
       memberId: a.memberId,
       status: a.status,
       note: a.note || '',
-      eligibility: a.eligibility || 'not_applicable'
+      eligibility: a.eligibility || 'not_applicable',
+      managementTermId: a.management_term_id || undefined
     }));
 
     const fetchedUsers: User[] = (usersRes.data || []).map(u => ({
@@ -400,7 +444,9 @@ export async function downloadSupabaseToLocal(): Promise<{ success: boolean; mes
       name: u.name || '',
       email: u.email || '',
       password: u.password || '',
-      role: u.role || 'visualizacao'
+      role: u.role || 'visualizacao',
+      managementTermId: u.management_term_id || undefined,
+      createdBy: u.created_by || undefined
     }));
 
     // Update local storage so that subsequent syncs and UI loads remain unified
@@ -408,6 +454,9 @@ export async function downloadSupabaseToLocal(): Promise<{ success: boolean; mes
     saveLocalEvents(fetchedEvents);
     saveLocalAttendances(fetchedAttendances);
     saveLocalUsers(fetchedUsers);
+    if (!termLoadError) {
+      saveLocalManagementTerms(fetchedManagementTerms);
+    }
     saveEventPhotos(fetchedPhotos);
 
     return {
@@ -417,7 +466,8 @@ export async function downloadSupabaseToLocal(): Promise<{ success: boolean; mes
         members: fetchedMembers,
         events: fetchedEvents,
         attendances: fetchedAttendances,
-        users: fetchedUsers
+        users: fetchedUsers,
+        managementTerms: fetchedManagementTerms
       }
     };
   } catch (err: any) {
@@ -439,5 +489,52 @@ function getAttendancesList(): Attendance[] {
     return getLocalAttendances();
   } catch {
     return [];
+  }
+}
+
+/**
+ * Pushes general management term data to Supabase.
+ */
+export async function pushManagementTermToSupabase(term: ManagementTerm): Promise<{ success: boolean; message: string }> {
+  try {
+    const { error } = await supabase
+      .from(SUPABASE_TABLES.MANAGEMENT_TERMS)
+      .upsert({
+        id: term.id,
+        name: term.name,
+        year: term.year,
+        semester: term.semester,
+        start_date: term.startDate,
+        end_date: term.endDate,
+        status: term.status
+      });
+    if (error) {
+      console.warn('Erro ao salvar gestão no Supabase:', error.message);
+      return { success: false, message: error.message };
+    }
+    return { success: true, message: 'Salvo no Supabase com sucesso.' };
+  } catch (err: any) {
+    console.warn('Erro de rede ao salvar gestão no Supabase:', err);
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+/**
+ * Deletes management term data from Supabase.
+ */
+export async function deleteManagementTermFromSupabase(id: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const { error } = await supabase
+      .from(SUPABASE_TABLES.MANAGEMENT_TERMS)
+      .delete()
+      .eq('id', id);
+    if (error) {
+      console.warn('Erro ao excluir gestão do Supabase:', error.message);
+      return { success: false, message: error.message };
+    }
+    return { success: true, message: 'Excluído do Supabase com sucesso.' };
+  } catch (err: any) {
+    console.warn('Erro de rede ao excluir gestão no Supabase:', err);
+    return { success: false, message: err.message || String(err) };
   }
 }

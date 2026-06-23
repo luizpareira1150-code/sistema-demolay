@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { Member, User } from '../types';
 import { useNotification } from '../components/NotificationContext';
+import { useManagementTerm } from '../contexts/ManagementTermContext';
+import { canEditCurrentManagementTerm } from '../utils/permission';
 
 interface NominataPageProps {
   members: Member[];
@@ -43,7 +45,10 @@ export default function NominataPage({
   onUpdateMembers
 }: NominataPageProps) {
   const { showNotification } = useNotification();
-  const canModify = currentUser.role === 'admin' || currentUser.role === 'diretoria';
+  const { activeTerm } = useManagementTerm();
+  const canEditTerm = canEditCurrentManagementTerm(currentUser, activeTerm);
+
+  const canModify = (currentUser.role === 'admin' || currentUser.role === 'diretoria') && canEditTerm;
 
   // Active Nominata section
   const [activeNominata, setActiveNominata] = useState<NominataType>('diretoria');
