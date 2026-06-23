@@ -16,14 +16,10 @@ import {
   Database,
   AlertTriangle,
   CheckCircle,
-  Eye,
-  Wifi,
-  WifiOff,
-  RefreshCw
+  Eye
 } from 'lucide-react';
 import { User } from '../types';
 import { canEditCurrentManagementTerm } from '../utils/permission';
-import { useRealtimeSync } from '../contexts/RealtimeContext';
 
 interface LayoutProps {
   currentUser: User;
@@ -42,39 +38,7 @@ export default function Layout({
 }: LayoutProps) {
   const navigate = useNavigate();
   const { activeTerm } = useManagementTerm();
-  const { status } = useRealtimeSync();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  const renderRealtimeBadge = (isMobile: boolean = false) => {
-    switch (status) {
-      case 'connecting':
-        return (
-          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 animate-pulse ${isMobile ? 'text-[10px]' : ''}`}>
-            <RefreshCw className="h-3 w-3 animate-spin text-amber-500" />
-            <span>Atualizando...</span>
-          </div>
-        );
-      case 'connected':
-        return (
-          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-100 ${isMobile ? 'text-[10px]' : ''}`}>
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-            </span>
-            <span>Sincronizado</span>
-          </div>
-        );
-      case 'error':
-        return (
-          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200 ${isMobile ? 'text-[10px]' : ''}`}>
-            <WifiOff className="h-3 w-3 text-rose-500" />
-            <span>Conexão Offline</span>
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'diretoria_admin', 'diretoria', 'visualizacao'] },
@@ -176,15 +140,12 @@ export default function Layout({
             PAAD - DeMolay
           </h2>
         </div>
-        <div className="flex items-center gap-3">
-          {renderRealtimeBadge(true)}
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-1.5 rounded-lg bg-slate-800 text-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-500"
-          >
-            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-        </div>
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="p-1.5 rounded-lg bg-slate-800 text-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-500"
+        >
+          {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </button>
       </header>
 
       {/* Mobile Menu Backdrop & Drawer */}
@@ -276,7 +237,7 @@ export default function Layout({
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Desktop Header containing active view title and metadata */}
         <header className="no-print hidden md:flex items-center justify-between px-8 bg-white border-b border-slate-200 h-16 shrink-0 select-none">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <h2 className="text-lg font-bold text-slate-800 font-display capitalize">
               {
                 activeTab === 'dashboard' ? 'Dashboard' :
@@ -293,7 +254,6 @@ export default function Layout({
               }
             </h2>
             <span className="text-slate-400 text-xs font-medium">• Gestão de Presença Capítulo</span>
-            {renderRealtimeBadge(false)}
           </div>
           <div className="flex items-center gap-4">
             {activeTerm && (

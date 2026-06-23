@@ -30,7 +30,6 @@ import ManagementTermsPage from './pages/ManagementTermsPage';
 import SelectManagementTermPage from './pages/SelectManagementTermPage';
 import AuditPage from './pages/AuditPage';
 import { ManagementTermProvider, useManagementTerm } from './contexts/ManagementTermContext';
-import { RealtimeProvider } from './contexts/RealtimeContext';
 
 // Import Supabase Integration triggers and sync helpers
 import { checkSupabaseConnection, supabase } from './utils/supabaseClient';
@@ -157,39 +156,42 @@ function AppContent() {
     tryDownloadSupabase();
   }, []);
 
-  // Handler for Realtime notifications to refresh shared states
-  const handleSyncFromSupabase = async () => {
-    console.log('[Realtime-Sync] Sincronizando dados locais com o Supabase...');
-    try {
-      const res = await downloadSupabaseToLocal();
-      if (res.success && res.data) {
-        setMembers(res.data.members);
-        setEvents(res.data.events);
-        setAttendances(res.data.attendances);
-        setUsers(res.data.users);
+  // Realtime Debug Subscription for diagnostic testing
+  useEffect(() => {
+    console.log('Iniciando diagnóstico técnico de canais Realtime do Supabase...');
 
-        // Se o próprio usuário logado tiver seu profile alterado, recarregar profile e permissões
-        if (currentUser) {
-          const updatedSelf = res.data.users.find(u => u.id === currentUser.id);
-          if (updatedSelf) {
-            const hasRoleChanged = updatedSelf.role !== currentUser.role;
-            const hasTermChanged = updatedSelf.managementTermId !== currentUser.managementTermId;
-            const hasNameChanged = updatedSelf.name !== currentUser.name;
+    const tablesToSubscribe = [
+      'demolay_members',
+      'demolay_events',
+      'demolay_attendance',
+      'profiles',
+      'management_terms',
+      'audit_logs'
+    ];
 
-            if (hasRoleChanged || hasTermChanged || hasNameChanged) {
-              console.log('[Realtime-Sync] O perfil do próprio usuário conectado foi alterado via Realtime! Recarregando permissões...');
-              setCurrentUser(updatedSelf);
-              saveCurrentUser(updatedSelf);
-            }
+    const channels = tablesToSubscribe.map(tableName => {
+      const channel = supabase
+        .channel(`realtime-debug-${tableName}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: tableName },
+          (payload) => {
+            console.log(`[DEBUG REALTIME] Evento recebido na tabela "${tableName}":`, payload);
           }
-        }
+        )
+        .subscribe((status) => {
+          console.log(`[DEBUG REALTIME] Status da inscrição na tabela "${tableName}":`, status);
+        });
+      return channel;
+    });
 
-        console.log('[Realtime-Sync] Sincronização e atualização de estados concluída com sucesso!');
-      }
-    } catch (err) {
-      console.warn('[Realtime-Sync] Erro ao sincronizar após atualização em tempo real:', err);
-    }
-  };
+    return () => {
+      console.log('Removendo canais de diagnóstico Realtime...');
+      channels.forEach(channel => {
+        supabase.removeChannel(channel);
+      });
+    };
+  }, []);
 
   // 2. Auth handlers
   const handleLoginSuccess = (user: User) => {
@@ -654,7 +656,7 @@ function AppContent() {
     : attendances;
 
   return (
-    <RealtimeProvider currentUser={currentUser} onRefreshData={handleSyncFromSupabase}>
+    <>
       <Routes>
         {/* Public Ranking Route */}
         <Route
@@ -1018,7 +1020,7 @@ function AppContent() {
           onClose={() => setSelectedMemberModal(null)}
         />
       )}
-    </RealtimeProvider>
+    </>
   );
 }
 
