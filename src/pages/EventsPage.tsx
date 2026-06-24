@@ -12,7 +12,7 @@ import { CATEGORY_LABELS } from '../utils/calculations';
 import { getEventCategoryPreset, getLocalManagementTerms } from '../utils/storage';
 import { useNotification } from '../components/NotificationContext';
 import { useManagementTerm } from '../contexts/ManagementTermContext';
-import { canEditCurrentManagementTerm } from '../utils/permission';
+import { canEditCurrentManagementTerm, getAllowedEventCategoriesForProfile, validateEventCategoryPermission } from '../utils/permission';
 import Button from '../components/Button';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -37,6 +37,7 @@ export default function EventsPage({
 
   const { activeTerm } = useManagementTerm();
   const canEditTerm = canEditCurrentManagementTerm(currentUser, activeTerm);
+  const allowedCategories = getAllowedEventCategoriesForProfile(currentUser);
 
   // Permission checks
   const canModify = (currentUser.role === 'admin' || currentUser.role === 'diretoria' || currentUser.role === 'diretoria_admin') && canEditTerm;
@@ -71,13 +72,31 @@ export default function EventsPage({
       return;
     }
     setEditingEvent(null);
-    setFormTitle(CATEGORY_LABELS['ritualistica']);
-    setFormCategory('ritualistica');
+
+    // Default to 'ritualistica' unless restricted by role/position
+    let initialCategory: EventCategory = 'ritualistica';
+    const allowed = getAllowedEventCategoriesForProfile(currentUser);
+    if (allowed !== 'all' && allowed.length > 0) {
+      initialCategory = allowed[0];
+    }
+
+    setFormCategory(initialCategory);
+    setFormTitle(initialCategory === 'outros' ? '' : CATEGORY_LABELS[initialCategory]);
     setFormDate(new Date().toISOString().split('T')[0]);
     setFormDescription('');
-    setFormNominataType('diretoria');
+
+    // Automatically assign corresponding Nominata
+    if (initialCategory === 'ensaio_iniciacao') {
+      setFormNominataType('iniciacao');
+    } else if (initialCategory === 'ensaio_elevacao') {
+      setFormNominataType('elevacao');
+    } else if (initialCategory === 'outros') {
+      setFormNominataType('none');
+    } else {
+      setFormNominataType('diretoria');
+    }
     
-    const preset = getEventCategoryPreset('ritualistica');
+    const preset = getEventCategoryPreset(initialCategory);
     setFormRequiredFor(preset.requiredFor);
     setFormOptionalFor(preset.optionalFor);
 
@@ -126,35 +145,51 @@ export default function EventsPage({
       return;
     }
 
+    try {
+      validateEventCategoryPermission(currentUser, formCategory);
+    } catch (err: any) {
+      const msg = err.message || "Ação não permitida para este cargo.";
+      setFormError(msg);
+      showNotification('error', msg);
+      return;
+    }
+
     setFormLoading(true);
 
     setTimeout(() => {
-      if (editingEvent) {
-        onUpdateEvent({
-          ...editingEvent,
-          title: formTitle.trim(),
-          category: formCategory,
-          date: formDate,
-          description: formDescription.trim(),
-          requiredFor: formRequiredFor,
-          optionalFor: formOptionalFor,
-          nominataType: formNominataType
-        });
-        showNotification('success', 'Evento atualizado com sucesso.');
-      } else {
-        onAddEvent({
-          title: formTitle.trim(),
-          category: formCategory,
-          date: formDate,
-          description: formDescription.trim(),
-          requiredFor: formRequiredFor,
-          optionalFor: formOptionalFor,
-          nominataType: formNominataType
-        });
-        showNotification('success', 'Evento salvo com sucesso.');
+      try {
+        if (editingEvent) {
+          onUpdateEvent({
+            ...editingEvent,
+            title: formTitle.trim(),
+            category: formCategory,
+            date: formDate,
+            description: formDescription.trim(),
+            requiredFor: formRequiredFor,
+            optionalFor: formOptionalFor,
+            nominataType: formNominataType
+          });
+          showNotification('success', 'Evento atualizado com sucesso.');
+        } else {
+          onAddEvent({
+            title: formTitle.trim(),
+            category: formCategory,
+            date: formDate,
+            description: formDescription.trim(),
+            requiredFor: formRequiredFor,
+            optionalFor: formOptionalFor,
+            nominataType: formNominataType
+          });
+          showNotification('success', 'Evento salvo com sucesso.');
+        }
+        setFormLoading(false);
+        setIsFormOpen(false);
+      } catch (err: any) {
+        setFormLoading(false);
+        const msg = err.message || "Ação não permitida para este cargo.";
+        setFormError(msg);
+        showNotification('error', msg);
       }
-      setFormLoading(false);
-      setIsFormOpen(false);
     }, 550);
   };
 
@@ -446,6 +481,7 @@ export default function EventsPage({
                 </label>
                 <select
                   value={formCategory}
+                  disabled={editingEvent !== null && currentUser.role === 'diretoria' && (currentUser.position === 'Mordomo' || currentUser.position === 'Hospitaleiro')}
                   onChange={e => {
                     const value = e.target.value as EventCategory;
                     setFormCategory(value);
@@ -471,13 +507,15 @@ export default function EventsPage({
                       }
                     }
                   }}
-                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:opacity-75 disabled:cursor-not-allowed disabled:bg-slate-50"
                 >
-                  {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
-                    <option key={key} value={key}>
-                      {label}
-                    </option>
-                  ))}
+                  {Object.entries(CATEGORY_LABELS)
+                    .filter(([key]) => allowedCategories === 'all' || allowedCategories.includes(key as EventCategory))
+                    .map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
+                    ))}
                 </select>
               </div>
 

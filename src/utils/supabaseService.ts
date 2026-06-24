@@ -167,12 +167,27 @@ export async function pushUserToSupabase(user: User): Promise<void> {
       password: user.password,
       role: user.role,
       management_term_id: user.managementTermId || null,
-      created_by: user.createdBy || null
+      created_by: user.createdBy || null,
+      position: user.position || null
     };
 
     let { error } = await supabase
       .from(SUPABASE_TABLES.USERS)
       .upsert(payload);
+
+    // Se houver erro relacionado ao campo 'position' (coluna inexistente no banco antigo)
+    if (error && (
+      error.message.includes('position') ||
+      error.message.includes('column') ||
+      error.message.includes('schema cache')
+    )) {
+      console.warn('Falha ao salvar usuário com "position". Tentando sem este campo...');
+      delete payload.position;
+      const retryResult = await supabase
+        .from(SUPABASE_TABLES.USERS)
+        .upsert(payload);
+      error = retryResult.error;
+    }
 
     // Se houver erro relacionado ao campo 'created_by' (coluna inexistente ou chave estrangeira violada)
     if (error && (
@@ -355,9 +370,22 @@ export async function uploadLocalToSupabase(): Promise<{ success: boolean; messa
         password: user.password,
         role: user.role,
         management_term_id: user.managementTermId || null,
-        created_by: user.createdBy || null
+        created_by: user.createdBy || null,
+        position: user.position || null
       }));
       let { error } = await supabase.from(SUPABASE_TABLES.USERS).upsert(rows);
+
+      // Se houver erro relacionado ao campo 'position' (coluna inexistente)
+      if (error && (
+        error.message.includes('position') ||
+        error.message.includes('column') ||
+        error.message.includes('schema cache')
+      )) {
+        console.warn('Tentando sincronização em lote de usuários sem a coluna "position"...');
+        const rowsWithoutPosition = rows.map(({ position, ...rest }) => rest);
+        const retryResult = await supabase.from(SUPABASE_TABLES.USERS).upsert(rowsWithoutPosition);
+        error = retryResult.error;
+      }
 
       // Se houver erro relacionado ao campo 'created_by' (coluna inexistente ou chave estrangeira violada)
       if (error && (
@@ -527,7 +555,8 @@ export async function downloadSupabaseToLocal(): Promise<{ success: boolean; mes
       password: u.password || '',
       role: u.role || 'visualizacao',
       managementTermId: u.management_term_id || undefined,
-      createdBy: u.created_by || undefined
+      createdBy: u.created_by || undefined,
+      position: u.position || undefined
     }));
 
     // Update local storage so that subsequent syncs and UI loads remain unified

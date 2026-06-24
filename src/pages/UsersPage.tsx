@@ -68,6 +68,7 @@ export default function UsersPage({
   const [formPassword, setFormPassword] = useState('');
   const [formRole, setFormRole] = useState<UserRole>('visualizacao');
   const [formManagementTermId, setFormManagementTermId] = useState<string>('');
+  const [formPosition, setFormPosition] = useState<string>('');
   const [formError, setFormError] = useState('');
 
   // Open forms handlers
@@ -76,6 +77,7 @@ export default function UsersPage({
     setFormName('');
     setFormEmail('');
     setFormPassword('');
+    setFormPosition('');
     
     const initialRole = (currentUser.role === 'diretoria' || currentUser.role === 'diretoria_admin') ? 'diretoria' : 'visualizacao';
     const initialTermId = (currentUser.role === 'diretoria' || currentUser.role === 'diretoria_admin') ? (currentUser.managementTermId || '') : '';
@@ -118,6 +120,7 @@ export default function UsersPage({
     setFormName(user.name);
     setFormEmail(user.email);
     setFormPassword(user.password);
+    setFormPosition(user.position || '');
     
     setFormRole(user.role);
     setFormManagementTermId(user.managementTermId || '');
@@ -206,6 +209,25 @@ export default function UsersPage({
       return;
     }
 
+    const allowedPositions = [
+      "1º Conselheiro",
+      "2º Conselheiro",
+      "Secretário",
+      "Mordomo",
+      "Hospitaleiro",
+    ];
+
+    if (currentUser.role === 'diretoria_admin' || formRole === 'diretoria') {
+      if (!formPosition) {
+        setFormError('Selecione o cargo/função deste usuário.');
+        return;
+      }
+      if (!allowedPositions.includes(formPosition)) {
+        setFormError('Cargo/função inválido.');
+        return;
+      }
+    }
+
     // Check if email already used (excluding current user edit)
     const emailConflict = users.some(
       u => u.email.toLowerCase() === formEmail.trim().toLowerCase() && u.id !== editingUser?.id
@@ -216,38 +238,44 @@ export default function UsersPage({
       return;
     }
 
-    if (editingUser) {
-      onUpdateUser({
-        ...editingUser,
-        name: formName.trim(),
-        email: formEmail.trim().toLowerCase(),
-        password: formPassword,
-        role: formRole,
-        managementTermId: formManagementTermId || undefined
-      });
-      setSuccessMessage('Usuário salvo com sucesso.');
-    } else {
-      onAddUser({
-        name: formName.trim(),
-        email: formEmail.trim().toLowerCase(),
-        password: formPassword,
-        role: formRole,
-        managementTermId: formManagementTermId || undefined
-      });
-      if (formRole === 'diretoria_admin') {
-        setSuccessMessage('Diretoria Admin criada e vinculada à gestão.');
-      } else if (formRole === 'diretoria') {
-        setSuccessMessage('Conta de Diretoria criada e vinculada à sua gestão.');
+    try {
+      if (editingUser) {
+        onUpdateUser({
+          ...editingUser,
+          name: formName.trim(),
+          email: formEmail.trim().toLowerCase(),
+          password: formPassword,
+          role: formRole,
+          managementTermId: formManagementTermId || undefined,
+          position: formPosition || null
+        });
+        setSuccessMessage('Usuário salvo com sucesso.');
       } else {
-        setSuccessMessage('Conta criada com sucesso.');
+        onAddUser({
+          name: formName.trim(),
+          email: formEmail.trim().toLowerCase(),
+          password: formPassword,
+          role: formRole,
+          managementTermId: formManagementTermId || undefined,
+          position: formPosition || null
+        });
+        if (formRole === 'diretoria_admin') {
+          setSuccessMessage('Diretoria Admin criada e vinculada à gestão.');
+        } else if (formRole === 'diretoria') {
+          setSuccessMessage('Conta de Diretoria criada e vinculada à sua gestão.');
+        } else {
+          setSuccessMessage('Conta criada com sucesso.');
+        }
       }
+
+      setTimeout(() => {
+        setSuccessMessage('');
+      }, 4500);
+
+      setIsFormOpen(false);
+    } catch (err: any) {
+      setFormError(err.message || 'Erro ao salvar usuário.');
     }
-
-    setTimeout(() => {
-      setSuccessMessage('');
-    }, 4500);
-
-    setIsFormOpen(false);
   };
 
   const getRoleBadgeClasses = (role: UserRole) => {
@@ -333,7 +361,12 @@ export default function UsersPage({
                   </div>
                   <div className="min-w-0 flex-1">
                     <h4 className="font-bold text-slate-800 text-sm truncate font-display">{user.name}</h4>
-                    <p className="text-xs text-slate-500 flex items-center gap-1 truncate mb-1">
+                    {user.position && (
+                      <div className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 mt-0.5 mb-1 w-fit">
+                        {user.position}
+                      </div>
+                    )}
+                    <p className="text-xs text-slate-500 flex items-center gap-1 truncate mb-1 mt-1">
                       <Mail className="h-3 w-3 shrink-0" /> {user.email}
                     </p>
                     {user.managementTermId && (
@@ -427,10 +460,11 @@ export default function UsersPage({
                 <input
                   type="text"
                   required
+                  disabled={editingUser !== null && currentUser.role === 'diretoria_admin'}
                   value={formName}
                   onChange={e => setFormName(e.target.value)}
                   placeholder="Ex: Pedro da Silva Ramos"
-                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:opacity-75 disabled:cursor-not-allowed disabled:bg-slate-50"
                 />
               </div>
 
@@ -442,10 +476,11 @@ export default function UsersPage({
                 <input
                   type="email"
                   required
+                  disabled={editingUser !== null && currentUser.role === 'diretoria_admin'}
                   value={formEmail}
                   onChange={e => setFormEmail(e.target.value)}
                   placeholder="Ex: pedro@demolay.com"
-                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:opacity-75 disabled:cursor-not-allowed disabled:bg-slate-50"
                 />
               </div>
 
@@ -457,17 +492,18 @@ export default function UsersPage({
                 <input
                   type="password"
                   required
+                  disabled={editingUser !== null && currentUser.role === 'diretoria_admin'}
                   value={formPassword}
                   onChange={e => setFormPassword(e.target.value)}
                   placeholder="Mínimo 4 caracteres"
-                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:opacity-75 disabled:cursor-not-allowed disabled:bg-slate-50"
                 />
               </div>
 
               {/* Role setting */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-widest mb-1.5">
-                  Perfil de Acesso (Cargo)
+                  Perfil de Acesso
                 </label>
                 <select
                   disabled={currentUser.role !== 'admin'}
@@ -492,6 +528,29 @@ export default function UsersPage({
                   )}
                 </select>
               </div>
+
+              {/* Cargo/Função Dropdown */}
+              {(formRole === 'diretoria' || currentUser.role === 'diretoria_admin') && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-widest mb-1.5 flex justify-between items-center">
+                    <span>Cargo / Função</span>
+                    <span className="text-[9px] bg-rose-50 text-rose-700 border border-rose-150 px-1.5 rounded font-bold uppercase tracking-wider">Obrigatório</span>
+                  </label>
+                  <select
+                    required
+                    value={formPosition}
+                    onChange={e => setFormPosition(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900 font-sans"
+                  >
+                    <option value="">Selecione o cargo/função...</option>
+                    <option value="1º Conselheiro">1º Conselheiro</option>
+                    <option value="2º Conselheiro">2º Conselheiro</option>
+                    <option value="Secretário">Secretário</option>
+                    <option value="Mordomo">Mordomo</option>
+                    <option value="Hospitaleiro">Hospitaleiro</option>
+                  </select>
+                </div>
+              )}
 
               {/* Management selection */}
               <div>

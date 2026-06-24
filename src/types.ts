@@ -70,6 +70,7 @@ export interface User {
   role: UserRole;
   managementTermId?: string;
   createdBy?: string;
+  position?: string | null;
 }
 
 export interface ManagementTerm {

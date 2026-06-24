@@ -19,7 +19,7 @@ import { Member, Event, Attendance, AttendanceStatus, User, EventPhoto } from '.
 import { CATEGORY_LABELS, getMemberEligibility } from '../utils/calculations';
 import { useNotification } from '../components/NotificationContext';
 import { useManagementTerm } from '../contexts/ManagementTermContext';
-import { canEditCurrentManagementTerm } from '../utils/permission';
+import { canEditCurrentManagementTerm, getAllowedEventCategoriesForProfile, canManageAttendanceForEvent, validateAttendancePermission } from '../utils/permission';
 import Button from '../components/Button';
 import ConfirmModal from '../components/ConfirmModal';
 import { getEventPhotos, saveEventPhotos } from '../utils/storage';
@@ -47,12 +47,14 @@ export default function AttendancePage({
   const { showNotification } = useNotification();
   const { activeTerm } = useManagementTerm();
   const canEditTerm = canEditCurrentManagementTerm(currentUser, activeTerm);
-  const isReadOnly = currentUser.role === 'visualizacao' || !canEditTerm;
 
   // Select active members
   const activeMembers = members.filter(m => m.status === 'active');
 
   const [currentEvent, setCurrentEvent] = useState<Event | null>(initialSelectedEvent);
+
+  const isAllowedToManageThisEvent = currentEvent ? canManageAttendanceForEvent(currentUser, currentEvent) : true;
+  const isReadOnly = currentUser.role === 'visualizacao' || !canEditTerm || !isAllowedToManageThisEvent;
 
   const [eventPhotos, setEventPhotos] = useState<EventPhoto[]>([]);
   const [photoCompressing, setPhotoCompressing] = useState(false);
@@ -294,7 +296,10 @@ export default function AttendancePage({
 
   // If no event is selected, display list of events to select one
   if (!currentEvent) {
-    const sortedEvents = [...events].sort((a, b) => b.date.localeCompare(a.date));
+    const allowedCategories = getAllowedEventCategoriesForProfile(currentUser);
+    const sortedEvents = [...events]
+      .filter(ev => allowedCategories === 'all' || allowedCategories.includes(ev.category))
+      .sort((a, b) => b.date.localeCompare(a.date));
 
     return (
       <div className="space-y-6">
@@ -451,7 +456,7 @@ export default function AttendancePage({
                   <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-lg shrink-0 w-full sm:w-[260px]">
                     <button
                       type="button"
-                      disabled={currentUser.role === 'visualizacao' || isNotApplicable}
+                      disabled={isReadOnly || isNotApplicable}
                       onClick={() => handleSelectStatus(member.id, 'present')}
                       className={`py-1 rounded text-[11px] font-bold transition cursor-pointer text-center ${
                         entry.status === 'present'
@@ -466,7 +471,7 @@ export default function AttendancePage({
 
                     <button
                       type="button"
-                      disabled={currentUser.role === 'visualizacao' || isNotApplicable}
+                      disabled={isReadOnly || isNotApplicable}
                       onClick={() => handleSelectStatus(member.id, 'absent')}
                       className={`py-1 rounded text-[11px] font-bold transition cursor-pointer text-center ${
                         entry.status === 'absent'
@@ -481,7 +486,7 @@ export default function AttendancePage({
 
                     <button
                       type="button"
-                      disabled={currentUser.role === 'visualizacao' || isNotApplicable}
+                      disabled={isReadOnly || isNotApplicable}
                       onClick={() => handleSelectStatus(member.id, 'justified')}
                       className={`py-1 rounded text-[11px] font-bold transition cursor-pointer text-center ${
                         entry.status === 'justified'
@@ -497,13 +502,13 @@ export default function AttendancePage({
 
                   <input
                     type="text"
-                    disabled={currentUser.role === 'visualizacao' || isNotApplicable}
+                    disabled={isReadOnly || isNotApplicable}
                     value={isNotApplicable ? 'NÃO APLICÁVEL' : entry.note}
                     onChange={e => handleEditNote(member.id, e.target.value)}
                     placeholder={
                       isNotApplicable
                         ? 'Evento não aplicável'
-                        : currentUser.role === 'visualizacao' 
+                        : isReadOnly 
                           ? "Sem observações" 
                           : "Inserir justificativa/observação..."
                     }
@@ -549,12 +554,25 @@ export default function AttendancePage({
           </div>
 
           {/* Quick instructions / alerts */}
-          {currentUser.role === 'visualizacao' && (
+          {currentUser.role === 'visualizacao' ? (
             <div className="bg-yellow-50 text-yellow-800 border border-yellow-250 rounded-lg p-2 text-xs flex items-center gap-1.5 font-medium max-w-xs">
               <Info className="h-4 w-4 shrink-0" />
               Você está no perfil de visualização e não pode salvar alterações.
             </div>
-          )}
+          ) : !isAllowedToManageThisEvent ? (
+            <div className="bg-rose-50 text-rose-800 border border-rose-200 rounded-lg p-3 text-xs flex items-center gap-1.5 font-bold max-w-md">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 animate-pulse" />
+              {currentUser.role === 'diretoria' && currentUser.position === 'Mordomo' && (
+                <span>O cargo Mordomo só pode confirmar presenças em eventos de Limpeza.</span>
+              )}
+              {currentUser.role === 'diretoria' && currentUser.position === 'Hospitaleiro' && (
+                <span>O cargo Hospitaleiro só pode confirmar presenças em eventos de Filantropia e Outros.</span>
+              )}
+              {!(currentUser.role === 'diretoria' && (currentUser.position === 'Mordomo' || currentUser.position === 'Hospitaleiro')) && (
+                <span>Ação não permitida para este cargo.</span>
+              )}
+            </div>
+          ) : null}
         </div>
 
         {currentEvent.description && (
@@ -577,7 +595,7 @@ export default function AttendancePage({
             </p>
           </div>
           
-          {currentUser.role !== 'visualizacao' && (
+          {!isReadOnly && (
             <label className={`cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 bg-slate-900 border border-transparent rounded-lg text-white font-bold hover:bg-slate-800 transition text-xs select-none shadow-xs shrink-0 ${photoCompressing ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}>
               {photoCompressing ? (
                 <>
@@ -619,7 +637,7 @@ export default function AttendancePage({
                   onClick={() => setLightboxPhoto(p)}
                 />
                 
-                {currentUser.role !== 'visualizacao' && (
+                {!isReadOnly && (
                   <button
                     type="button"
                     onClick={(e) => {
@@ -644,7 +662,7 @@ export default function AttendancePage({
       </div>
 
       {/* Control Actions bar */}
-      {currentUser.role !== 'visualizacao' && (
+      {!isReadOnly && (
         <div className="bg-slate-900 text-white p-4 rounded-xl shadow-md flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
             <Users className="h-5 w-5 text-amber-400" />
@@ -704,7 +722,7 @@ export default function AttendancePage({
       )}
 
       {/* Bottom Save Block */}
-      {currentUser.role !== 'visualizacao' && activeMembers.length > 0 && (
+      {!isReadOnly && activeMembers.length > 0 && (
         <div className="bg-slate-105 p-4 rounded-xl border border-slate-200 flex justify-end items-center gap-3 animate-fade-in">
           {saveSuccess && (
             <span className="text-emerald-600 text-xs font-bold"> Frequência salva com sucesso!</span>

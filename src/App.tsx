@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Member, Event, Attendance, User } from './types';
+import { validateEventCategoryPermission, validateAttendancePermission } from './utils/permission';
 import {
   getMembers,
   saveMembers,
@@ -304,6 +305,8 @@ function AppContent() {
 
   // 4. Event CRUD triggers with Supabase Sync
   const handleAddEvent = (newEvent: Omit<Event, 'id' | 'createdAt'>) => {
+    validateEventCategoryPermission(currentUser, newEvent.category);
+
     const created: Event = {
       ...newEvent,
       id: 'e_' + Date.now(),
@@ -332,6 +335,8 @@ function AppContent() {
   };
 
   const handleUpdateEvent = (updatedEvent: Event) => {
+    validateEventCategoryPermission(currentUser, updatedEvent.category);
+
     const created: Event = {
       ...updatedEvent,
       managementTermId: updatedEvent.managementTermId || activeTerm?.id || undefined
@@ -394,6 +399,12 @@ function AppContent() {
 
   // 5. Save Event attendance marks with Supabase Sync
   const handleSaveAttendances = (eventId: string, updatedList: Omit<Attendance, 'id'>[]) => {
+    const targetEvent = events.find(e => e.id === eventId);
+    if (!targetEvent) {
+      throw new Error("Evento não encontrado.");
+    }
+    validateAttendancePermission(currentUser, targetEvent);
+
     // Purge existing attendances matching eventId
     const baseList = attendances.filter(a => a.eventId !== eventId);
 
@@ -473,6 +484,20 @@ function AppContent() {
         alert('Diretoria Admin só pode criar contas Diretoria.');
         return;
       }
+      const allowedPositions = [
+        "1º Conselheiro",
+        "2º Conselheiro",
+        "Secretário",
+        "Mordomo",
+        "Hospitaleiro",
+      ];
+      const selectedPosition = newUser.position;
+      if (!selectedPosition) {
+        throw new Error('Selecione o cargo/função deste usuário.');
+      }
+      if (!allowedPositions.includes(selectedPosition)) {
+        throw new Error('Cargo/função inválido.');
+      }
       finalRole = 'diretoria';
       finalManagementTermId = currentUser.managementTermId;
     } else if (currentUser.role === 'diretoria') {
@@ -541,6 +566,20 @@ function AppContent() {
         alert('Você não pode alterar o perfil ou a gestão vinculada deste usuário.');
         return;
       }
+      const allowedPositions = [
+        "1º Conselheiro",
+        "2º Conselheiro",
+        "Secretário",
+        "Mordomo",
+        "Hospitaleiro",
+      ];
+      const selectedPosition = updatedUser.position;
+      if (!selectedPosition) {
+        throw new Error('Selecione o cargo/função deste usuário.');
+      }
+      if (!allowedPositions.includes(selectedPosition)) {
+        throw new Error('Cargo/função inválido.');
+      }
       finalRole = target.role;
       finalManagementTermId = target.managementTermId;
     } else if (currentUser.role === 'diretoria') {
@@ -558,6 +597,9 @@ function AppContent() {
 
     const boundUser: User = {
       ...updatedUser,
+      name: currentUser.role === 'diretoria_admin' ? target.name : updatedUser.name,
+      email: currentUser.role === 'diretoria_admin' ? target.email : updatedUser.email,
+      password: currentUser.role === 'diretoria_admin' ? target.password : updatedUser.password,
       role: finalRole,
       managementTermId: finalManagementTermId
     };
