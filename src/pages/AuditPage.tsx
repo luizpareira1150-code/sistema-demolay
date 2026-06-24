@@ -10,6 +10,7 @@ import {
   User as UserIcon, 
   RefreshCw, 
   AlertCircle,
+  CheckCircle2,
   Eye,
   FileText,
   Activity,
@@ -33,6 +34,7 @@ export default function AuditPage({ currentUser }: AuditPageProps) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedLogDetails, setSelectedLogDetails] = useState<any | null>(null);
+  const [selectedAttendanceLog, setSelectedAttendanceLog] = useState<any | null>(null);
 
   // Determine which managementTermId to filter by for the fetch
   const effectiveTermId = currentUser.role === 'diretoria_admin' 
@@ -150,6 +152,134 @@ export default function AuditPage({ currentUser }: AuditPageProps) {
     } catch {
       return '';
     }
+  };
+
+  // Finds the previous attendance_saved log for the same event
+  const getPreviousLog = (currentLog: any) => {
+    if (!currentLog) return null;
+    const currentEventId = currentLog.entity_id || currentLog.metadata?.event_id;
+    if (!currentEventId) return null;
+
+    const currentLogTime = new Date(currentLog.created_at).getTime();
+
+    // Find candidate logs for the same event saved before this log
+    const candidates = logs.filter(log => {
+      const isSameEvent = (log.entity_id === currentEventId) || (log.metadata?.event_id === currentEventId);
+      const isAttendanceSave = log.action === 'attendance_saved';
+      const isBefore = new Date(log.created_at).getTime() < currentLogTime;
+      return isSameEvent && isAttendanceSave && isBefore;
+    });
+
+    if (candidates.length === 0) return null;
+
+    // Sort candidate logs by created_at desc to find the most recent previous one
+    candidates.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return candidates[0];
+  };
+
+  // Compares current attendance log with the previous one
+  const getAttendanceChanges = (currentLog: any) => {
+    const previousLog = getPreviousLog(currentLog);
+
+    if (!previousLog) {
+      return {
+        status: 'first_save',
+        message: 'Este foi o primeiro salvamento de presenças registrado para este evento.',
+        changes: []
+      };
+    }
+
+    const currentDetails = currentLog.metadata?.attendance_details;
+    const previousDetails = previousLog.metadata?.attendance_details;
+
+    if (!currentDetails || !previousDetails) {
+      return {
+        status: 'no_details',
+        message: 'Não foi possível comparar porque um dos registros não possui detalhamento.',
+        changes: []
+      };
+    }
+
+    const statusLabels: Record<string, string> = {
+      present: 'Presente',
+      absent: 'Ausente',
+      justified: 'Justificativa',
+      not_attended: 'Não compareceu',
+      not_applicable: 'Não aplicável'
+    };
+
+    const getLabel = (detail: any) => {
+      return statusLabels[detail.status] || detail.status_label || detail.status;
+    };
+
+    const changes: {
+      type: 'modified' | 'added' | 'removed';
+      memberName: string;
+      oldStatus?: string;
+      newStatus?: string;
+      text: string;
+    }[] = [];
+
+    // Index previous details by member_id
+    const previousMap = new Map<string, any>();
+    previousDetails.forEach((detail: any) => {
+      if (detail.member_id) {
+        previousMap.set(detail.member_id, detail);
+      }
+    });
+
+    // Check current details against previous
+    const currentMap = new Map<string, any>();
+    currentDetails.forEach((detail: any) => {
+      if (detail.member_id) {
+        currentMap.set(detail.member_id, detail);
+        const prev = previousMap.get(detail.member_id);
+        if (!prev) {
+          changes.push({
+            type: 'added',
+            memberName: detail.member_name,
+            newStatus: getLabel(detail),
+            text: `Adicionado: ${detail.member_name} — ${getLabel(detail)}`
+          });
+        } else {
+          if (prev.status !== detail.status) {
+            changes.push({
+              type: 'modified',
+              memberName: detail.member_name,
+              oldStatus: getLabel(prev),
+              newStatus: getLabel(detail),
+              text: `${detail.member_name} — ${getLabel(prev)} → ${getLabel(detail)}`
+            });
+          }
+        }
+      }
+    });
+
+    // Check for removed members
+    previousDetails.forEach((detail: any) => {
+      if (detail.member_id && !currentMap.has(detail.member_id)) {
+        changes.push({
+          type: 'removed',
+          memberName: detail.member_name,
+          text: `Removido do registro: ${detail.member_name}`
+        });
+      }
+    });
+
+    if (changes.length === 0) {
+      return {
+        status: 'no_changes',
+        message: 'Nenhuma alteração em relação ao salvamento anterior.',
+        changes: []
+      };
+    }
+
+    return {
+      status: 'has_changes',
+      previousSavedAt: previousLog.created_at,
+      previousSavedBy: previousLog.user_name || 'Sistema',
+      changes
+    };
   };
 
   // Filter logs based on inputs
@@ -398,13 +528,33 @@ export default function AuditPage({ currentUser }: AuditPageProps) {
                       <p className="text-slate-700 font-medium leading-relaxed">{log.description}</p>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <button
-                        onClick={() => setSelectedLogDetails(log)}
-                        className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-indigo-600 rounded-lg transition cursor-pointer"
-                        title="Ver dados JSON"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
+                      {log.action === 'attendance_saved' ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setSelectedAttendanceLog(log)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition cursor-pointer border border-indigo-150"
+                            title="Ver detalhamento de presenças"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Ver detalhes
+                          </button>
+                          <button
+                            onClick={() => setSelectedLogDetails(log)}
+                            className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-lg transition cursor-pointer"
+                            title="Ver dados JSON"
+                          >
+                            <FileText className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setSelectedLogDetails(log)}
+                          className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-indigo-600 rounded-lg transition cursor-pointer"
+                          title="Ver dados JSON"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -436,13 +586,31 @@ export default function AuditPage({ currentUser }: AuditPageProps) {
                       {log.user_name || 'Sistema'}
                     </span>
                   </div>
-                  <button
-                    onClick={() => setSelectedLogDetails(log)}
-                    className="flex items-center gap-1 text-[11px] text-indigo-600 font-bold hover:underline cursor-pointer"
-                  >
-                    <Eye className="h-3 w-3" />
-                    Ver Detalhes
-                  </button>
+                  {log.action === 'attendance_saved' ? (
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setSelectedAttendanceLog(log)}
+                        className="flex items-center gap-1 text-[11px] text-indigo-600 font-bold hover:underline cursor-pointer"
+                      >
+                        <Eye className="h-3 w-3" />
+                        Ver Detalhes
+                      </button>
+                      <button
+                        onClick={() => setSelectedLogDetails(log)}
+                        className="text-[11px] text-slate-400 font-medium hover:underline cursor-pointer"
+                      >
+                        JSON
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setSelectedLogDetails(log)}
+                      className="flex items-center gap-1 text-[11px] text-indigo-600 font-bold hover:underline cursor-pointer"
+                    >
+                      <Eye className="h-3 w-3" />
+                      Ver Detalhes
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -510,6 +678,90 @@ export default function AuditPage({ currentUser }: AuditPageProps) {
                   </pre>
                 </div>
               )}
+
+              {selectedLogDetails.action === 'attendance_saved' && (
+                <div className="space-y-2 font-sans">
+                  <p className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">Detalhamento de Presenças</p>
+                  {selectedLogDetails.metadata && selectedLogDetails.metadata.attendance_details ? (
+                    <div className="p-4 bg-slate-950 rounded-lg border border-slate-800 space-y-3">
+                      {/* Summary stats */}
+                      {selectedLogDetails.metadata.summary && (
+                        <div className="flex flex-wrap gap-1.5 text-[10px] font-bold">
+                          <span className="px-2 py-0.5 bg-emerald-950/80 text-emerald-400 border border-emerald-900 rounded">
+                            Presentes: {selectedLogDetails.metadata.summary.present ?? 0}
+                          </span>
+                          <span className="px-2 py-0.5 bg-rose-950/80 text-rose-400 border border-rose-900 rounded">
+                            Ausentes: {selectedLogDetails.metadata.summary.absent ?? 0}
+                          </span>
+                          <span className="px-2 py-0.5 bg-amber-950/80 text-amber-400 border border-amber-900 rounded">
+                            Justificativas: {selectedLogDetails.metadata.summary.justified ?? 0}
+                          </span>
+                          {selectedLogDetails.metadata.summary.extra !== undefined && (
+                            <span className="px-2 py-0.5 bg-indigo-950/80 text-indigo-400 border border-indigo-900 rounded">
+                              Extras: {selectedLogDetails.metadata.summary.extra}
+                            </span>
+                          )}
+                          {selectedLogDetails.metadata.summary.not_applicable !== undefined && (
+                            <span className="px-2 py-0.5 bg-slate-900 text-slate-400 border border-slate-800 rounded">
+                              N/A: {selectedLogDetails.metadata.summary.not_applicable}
+                            </span>
+                          )}
+                          <span className="px-2 py-0.5 bg-slate-800 text-slate-200 border border-slate-700 rounded ml-auto">
+                            Total: {selectedLogDetails.metadata.summary.total ?? 0}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* List of members with statuses */}
+                      <div className="max-h-64 overflow-y-auto border border-slate-800 rounded divide-y divide-slate-800/60 text-[11px]">
+                        {selectedLogDetails.metadata.attendance_details.map((detail: any, idx: number) => {
+                          const getStatusBadge = (status: string) => {
+                            switch (status) {
+                              case 'present':
+                                return 'text-emerald-400 bg-emerald-950/50 border-emerald-900/60';
+                              case 'absent':
+                                return 'text-rose-400 bg-rose-950/50 border-rose-900/60';
+                              case 'justified':
+                                return 'text-amber-400 bg-amber-950/50 border-amber-900/60';
+                              case 'not_attended':
+                                return 'text-slate-400 bg-slate-900 border-slate-800';
+                              default:
+                                return 'text-slate-400 bg-slate-900 border-slate-800';
+                            }
+                          };
+
+                          return (
+                             <div key={idx} className="flex items-center justify-between p-2.5 hover:bg-slate-900/50 transition">
+                               <div className="flex-1 min-w-0 pr-3">
+                                 <p className="font-semibold text-slate-200 truncate">{detail.member_name}</p>
+                                 {detail.note && (
+                                   <p className="text-[10px] text-slate-400 italic mt-0.5">
+                                     Motivo/Obs: {detail.note}
+                                   </p>
+                                 )}
+                               </div>
+                               <div className="flex items-center gap-1.5 shrink-0">
+                                 {detail.eligibility && detail.eligibility !== 'required' && (
+                                   <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 border border-slate-800 text-slate-500 rounded bg-slate-900/30">
+                                     {detail.eligibility === 'optional' ? 'Opcional' : 'N/A'}
+                                   </span>
+                                 )}
+                                 <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded border ${getStatusBadge(detail.status)}`}>
+                                   {detail.status_label || detail.status}
+                                 </span>
+                               </div>
+                             </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-slate-500 italic text-[11px]">
+                      Este registro antigo não possui detalhamento de presenças.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Footer */}
@@ -517,6 +769,280 @@ export default function AuditPage({ currentUser }: AuditPageProps) {
               <button
                 onClick={() => setSelectedLogDetails(null)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
+              >
+                Fechar Detalhes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attendance Detail Modal */}
+      {selectedAttendanceLog && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white text-slate-800 rounded-xl max-w-2xl w-full flex flex-col max-h-[90vh] border border-slate-200 shadow-2xl animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-150 shrink-0">
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-indigo-600" />
+                <h3 className="font-bold text-base text-slate-800">Detalhes das Presenças</h3>
+              </div>
+              <button
+                onClick={() => setSelectedAttendanceLog(null)}
+                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 overflow-y-auto space-y-6">
+              {/* Event Info Header Card */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Evento</p>
+                  <p className="text-sm font-bold text-slate-800 mt-0.5">{selectedAttendanceLog.entity_name || 'N/A'}</p>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Categoria: {selectedAttendanceLog.metadata?.event_category || 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Salvo por</p>
+                  <p className="text-sm font-bold text-slate-800 mt-0.5">{selectedAttendanceLog.user_name || 'Sistema'}</p>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {formatTime(selectedAttendanceLog.created_at)} — {formatDate(selectedAttendanceLog.created_at)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Resumo das Presenças</h4>
+                {selectedAttendanceLog.metadata?.summary ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-2.5 text-center">
+                      <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Presentes</p>
+                      <p className="text-lg font-extrabold text-emerald-700 mt-0.5">
+                        {selectedAttendanceLog.metadata.summary.present ?? 0}
+                      </p>
+                    </div>
+                    <div className="bg-rose-50 border border-rose-100 rounded-lg p-2.5 text-center">
+                      <p className="text-[10px] text-rose-600 font-bold uppercase tracking-wider">Ausentes</p>
+                      <p className="text-lg font-extrabold text-rose-700 mt-0.5">
+                        {selectedAttendanceLog.metadata.summary.absent ?? 0}
+                      </p>
+                    </div>
+                    <div className="bg-amber-50 border border-amber-100 rounded-lg p-2.5 text-center">
+                      <p className="text-[10px] text-amber-600 font-bold uppercase tracking-wider">Justificados</p>
+                      <p className="text-lg font-extrabold text-amber-700 mt-0.5">
+                        {selectedAttendanceLog.metadata.summary.justified ?? 0}
+                      </p>
+                    </div>
+                    {selectedAttendanceLog.metadata.summary.extra !== undefined && (
+                      <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-2.5 text-center">
+                        <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">Extras</p>
+                        <p className="text-lg font-extrabold text-indigo-700 mt-0.5">
+                          {selectedAttendanceLog.metadata.summary.extra ?? 0}
+                        </p>
+                      </div>
+                    )}
+                    <div className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-center col-span-2 sm:col-span-1">
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Total</p>
+                      <p className="text-lg font-extrabold text-slate-700 mt-0.5">
+                        {selectedAttendanceLog.metadata.summary.total ?? 0}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-slate-500 italic text-xs">
+                    Resumo indisponível para este log antigo.
+                  </div>
+                )}
+              </div>
+
+              {/* Previous Save Changes Comparison Section */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Alterações em relação ao salvamento anterior</h4>
+                {(() => {
+                  const comparison = getAttendanceChanges(selectedAttendanceLog);
+                  
+                  if (comparison.status === 'first_save') {
+                    return (
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-500 font-medium text-xs flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4 text-slate-400 shrink-0" />
+                        <span>{comparison.message}</span>
+                      </div>
+                    );
+                  }
+                  
+                  if (comparison.status === 'no_details') {
+                    return (
+                      <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg text-amber-700 font-medium text-xs flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                        <span>{comparison.message}</span>
+                      </div>
+                    );
+                  }
+                  
+                  if (comparison.status === 'no_changes') {
+                    return (
+                      <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-lg text-emerald-700 font-medium text-xs flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                        <span>{comparison.message}</span>
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <div className="bg-amber-50/30 border border-amber-200 rounded-xl p-4 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 text-[11px] text-slate-500 font-semibold border-b border-amber-200/50 pb-2">
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3.5 w-3.5 text-amber-600" />
+                          Comparado com salvamento de {formatTime(comparison.previousSavedAt)} — {formatDate(comparison.previousSavedAt)}
+                        </span>
+                        <span>Por: {comparison.previousSavedBy}</span>
+                      </div>
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {comparison.changes.map((change, index) => {
+                          let typeBadge = null;
+                          if (change.type === 'added') {
+                            typeBadge = <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[9px] font-extrabold uppercase shrink-0">Adicionado</span>;
+                          } else if (change.type === 'removed') {
+                            typeBadge = <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded text-[9px] font-extrabold uppercase shrink-0">Removido</span>;
+                          } else {
+                            typeBadge = <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[9px] font-extrabold uppercase shrink-0">Alterado</span>;
+                          }
+                          
+                          return (
+                            <div key={index} className="flex items-start gap-2.5 text-xs text-slate-700 font-medium py-1 border-b border-slate-100 last:border-0">
+                              {typeBadge}
+                              <span className="leading-normal">{change.text}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Attendance List */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Membros</h4>
+                {selectedAttendanceLog.metadata?.attendance_details ? (
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    {/* Desktop Table View */}
+                    <table className="w-full text-left border-collapse hidden sm:table">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-500 font-bold">
+                          <th className="px-4 py-3">Membro</th>
+                          <th className="px-4 py-3">Situação</th>
+                          <th className="px-4 py-3">Observação</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-150 text-xs text-slate-700">
+                        {selectedAttendanceLog.metadata.attendance_details.map((detail: any, idx: number) => {
+                          const getBadgeStyles = (status: string) => {
+                            switch (status) {
+                              case 'present':
+                                return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                              case 'absent':
+                                return 'bg-rose-50 text-rose-700 border-rose-200';
+                              case 'justified':
+                                return 'bg-amber-50 text-amber-700 border-amber-200';
+                              case 'not_attended':
+                                return 'bg-slate-100 text-slate-700 border-slate-200';
+                              case 'not_applicable':
+                                return 'bg-slate-50 text-slate-500 border-slate-200';
+                              default:
+                                return 'bg-slate-50 text-slate-500 border-slate-200';
+                            }
+                          };
+
+                          return (
+                            <tr key={idx} className="hover:bg-slate-50/55 transition">
+                              <td className="px-4 py-3">
+                                <div className="font-bold text-slate-800">{detail.member_name}</div>
+                                {detail.eligibility && detail.eligibility !== 'required' && (
+                                  <div className="text-[9px] text-slate-400 uppercase tracking-wider font-semibold mt-0.5">
+                                    Elegibilidade: {detail.eligibility === 'optional' ? 'Opcional' : 'Não Aplicável'}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${getBadgeStyles(detail.status)}`}>
+                                  {detail.status_label || detail.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-slate-500 italic max-w-xs truncate" title={detail.note || ''}>
+                                {detail.note || <span className="text-slate-300">—</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+
+                    {/* Mobile Card-style List View */}
+                    <div className="sm:hidden divide-y divide-slate-150">
+                      {selectedAttendanceLog.metadata.attendance_details.map((detail: any, idx: number) => {
+                        const getBadgeStyles = (status: string) => {
+                          switch (status) {
+                            case 'present':
+                              return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                            case 'absent':
+                              return 'bg-rose-50 text-rose-700 border-rose-200';
+                            case 'justified':
+                              return 'bg-amber-50 text-amber-700 border-amber-200';
+                            case 'not_attended':
+                              return 'bg-slate-100 text-slate-700 border-slate-200';
+                            case 'not_applicable':
+                              return 'bg-slate-50 text-slate-500 border-slate-200';
+                            default:
+                              return 'bg-slate-50 text-slate-500 border-slate-200';
+                          }
+                        };
+
+                        return (
+                          <div key={idx} className="p-3.5 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="font-bold text-slate-800 text-xs">{detail.member_name}</p>
+                                {detail.eligibility && detail.eligibility !== 'required' && (
+                                  <span className="text-[9px] uppercase tracking-wider font-semibold text-slate-400 bg-slate-50 border border-slate-100 px-1 py-0.5 rounded">
+                                    {detail.eligibility === 'optional' ? 'Opcional' : 'N/A'}
+                                  </span>
+                                )}
+                              </div>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border shrink-0 ${getBadgeStyles(detail.status)}`}>
+                                {detail.status_label || detail.status}
+                              </span>
+                            </div>
+                            {detail.note && (
+                              <p className="text-[11px] text-slate-500 italic bg-slate-50 p-2 rounded border border-slate-150">
+                                <span className="font-semibold not-italic text-slate-600 block text-[9px] uppercase tracking-wider mb-0.5">Observação</span>
+                                {detail.note}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-6 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center">
+                    <p className="text-slate-500 font-medium text-xs">Este registro antigo não possui detalhamento de presenças.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-150 bg-slate-50/50 flex justify-end shrink-0">
+              <button
+                onClick={() => setSelectedAttendanceLog(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
               >
                 Fechar Detalhes
               </button>

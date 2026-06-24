@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Member, Event, Attendance, User } from './types';
+import { getMemberEligibility } from './utils/calculations';
 import { validateEventCategoryPermission, validateAttendancePermission } from './utils/permission';
 import {
   getMembers,
@@ -431,12 +432,48 @@ function AppContent() {
       const eventTitle = targetEvent ? targetEvent.title : 'Evento';
       const eventTermId = targetEvent?.managementTermId || activeTerm?.id || null;
 
-      const countPresent = updatedList.filter(a => a.status === 'present').length;
-      const countAbsent = updatedList.filter(a => a.status === 'absent').length;
-      const countJustified = updatedList.filter(a => a.status === 'justified').length;
-      const countExtras = updatedList.filter(a => a.eligibility === 'optional' && a.status === 'present').length;
-      const countNotApplicable = updatedList.filter(a => a.status === 'not_applicable').length;
-      const totalCount = updatedList.length;
+      const statusLabels: Record<string, string> = {
+        present: 'Presente',
+        absent: 'Ausente',
+        justified: 'Justificativa',
+        not_attended: 'Não compareceu',
+        not_applicable: 'Não aplicável'
+      };
+
+      const attendanceDetails = updatedList.map(item => {
+        const member = members.find(m => m.id === item.memberId);
+        const computedEligibility = (member && targetEvent) 
+          ? getMemberEligibility(member, targetEvent) 
+          : (item.eligibility || 'required');
+
+        return {
+          member_id: item.memberId,
+          member_name: member ? member.name : 'Membro Desconhecido',
+          status: item.status,
+          status_label: statusLabels[item.status] || item.status,
+          eligibility: computedEligibility,
+          note: item.note || null
+        };
+      });
+
+      const countPresent = attendanceDetails.filter(a => a.status === 'present').length;
+      const countAbsent = attendanceDetails.filter(a => a.status === 'absent').length;
+      const countJustified = attendanceDetails.filter(a => a.status === 'justified').length;
+      const countExtras = attendanceDetails.filter(a => a.eligibility === 'optional' && a.status === 'present').length;
+      const countNotApplicable = attendanceDetails.filter(a => a.status === 'not_applicable').length;
+      const countNotAttended = attendanceDetails.filter(a => a.status === 'not_attended').length;
+      const totalCount = attendanceDetails.length;
+
+      const eventCategoryLabel = targetEvent ? (
+        targetEvent.category === 'ritualistica' ? 'Ritualística' :
+        targetEvent.category === 'terca_burocratica' ? 'Terça-feira Burocrática' :
+        targetEvent.category === 'quinta_burocratica' ? 'Quinta-feira Burocrática' :
+        targetEvent.category === 'filantropia' ? 'Filantropia' :
+        targetEvent.category === 'limpeza' ? 'Limpeza' :
+        targetEvent.category === 'ensaio_iniciacao' ? 'Ensaio de Iniciação' :
+        targetEvent.category === 'ensaio_elevacao' ? 'Ensaio de Elevação' :
+        targetEvent.category === 'outros' ? 'Outros' : targetEvent.category
+      ) : '';
 
       logAuditAction({
         managementTermId: eventTermId,
@@ -449,6 +486,20 @@ function AppContent() {
         entityName: eventTitle,
         description: `${currentUser.name || currentUser.email} salvou presenças do evento ${eventTitle}`,
         metadata: {
+          event_id: eventId,
+          event_title: eventTitle,
+          event_category: eventCategoryLabel,
+          attendance_details: attendanceDetails,
+          summary: {
+            present: countPresent,
+            absent: countAbsent,
+            justified: countJustified,
+            extra: countExtras,
+            not_attended: countNotAttended,
+            not_applicable: countNotApplicable,
+            total: totalCount
+          },
+          // Maintain compatibility with existing root keys
           present: countPresent,
           absent: countAbsent,
           justified: countJustified,
