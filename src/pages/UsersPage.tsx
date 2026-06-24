@@ -503,7 +503,7 @@ export default function UsersPage({
               {/* Role setting */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-widest mb-1.5">
-                  Perfil de Acesso
+                  Nível de Permissão (Acesso)
                 </label>
                 <select
                   disabled={currentUser.role !== 'admin'}
@@ -530,10 +530,10 @@ export default function UsersPage({
               </div>
 
               {/* Cargo/Função Dropdown */}
-              {(formRole === 'diretoria' || currentUser.role === 'diretoria_admin') && (
+              {formRole === 'diretoria' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-widest mb-1.5 flex justify-between items-center">
-                    <span>Cargo / Função</span>
+                    <span>Cargo / Função (Cargo)</span>
                     <span className="text-[9px] bg-rose-50 text-rose-700 border border-rose-150 px-1.5 rounded font-bold uppercase tracking-wider">Obrigatório</span>
                   </label>
                   <select
