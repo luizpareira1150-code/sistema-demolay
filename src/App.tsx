@@ -32,6 +32,7 @@ import ManagementTermsPage from './pages/ManagementTermsPage';
 import SelectManagementTermPage from './pages/SelectManagementTermPage';
 import AuditPage from './pages/AuditPage';
 import { ManagementTermProvider, useManagementTerm } from './contexts/ManagementTermContext';
+import { useNotification } from './components/NotificationContext';
 
 // Import Supabase Integration triggers and sync helpers
 import { checkSupabaseConnection, supabase } from './utils/supabaseClient';
@@ -58,6 +59,7 @@ function AppContent() {
   const location = useLocation();
   const { activeTerm, setActiveTerm } = useManagementTerm();
   const [currentUser, setCurrentUser] = useState<User | null>(() => getCurrentUser());
+  const { showNotification } = useNotification();
 
   // Redirect guard: if user is logged in, has not selected an active management term yet,
   // is trying to navigate to an administrative sub-route, and is NOT on the selection page.
@@ -225,7 +227,9 @@ function AppContent() {
     const updated = [...members, created];
     setMembers(updated);
     saveMembers(updated);
-    pushMemberToSupabase(created); // Background cloud push
+    pushMemberToSupabase(created).catch((err) => {
+      showNotification('error', `Falha ao salvar novo membro online: ${err.message || err}.`);
+    }); // Background cloud push
 
     if (currentUser) {
       logAuditAction({
@@ -252,7 +256,9 @@ function AppContent() {
     const updated = members.map(m => (m.id === created.id ? created : m));
     setMembers(updated);
     saveMembers(updated);
-    pushMemberToSupabase(created); // Background cloud push
+    pushMemberToSupabase(created).catch((err) => {
+      showNotification('error', `Falha ao atualizar membro online: ${err.message || err}.`);
+    }); // Background cloud push
 
     if (currentUser) {
       logAuditAction({

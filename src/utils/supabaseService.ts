@@ -20,28 +20,34 @@ import {
  */
 export async function pushMemberToSupabase(member: Member): Promise<void> {
   try {
+    const payload = {
+      id: member.id,
+      name: member.name,
+      status: member.status ?? 'active',
+      joinedAt: member.joinedAt || null,
+      notes: member.notes || null,
+      createdAt: member.createdAt || null,
+      degree: member.degree ?? 'iniciatico',
+      isNominata: member.isNominata ?? false,
+      nominataRole: member.nominataRole || null,
+      isNominataIniciacao: member.isNominataIniciacao ?? false,
+      nominataIniciacaoRole: member.nominataIniciacaoRole || null,
+      isNominataElevacao: member.isNominataElevacao ?? false,
+      nominataElevacaoRole: member.nominataElevacaoRole || null,
+      management_term_id: member.managementTermId || null,
+      evaluation_start_date: member.evaluationStartDate || null
+    };
+
     const { error } = await supabase
       .from(SUPABASE_TABLES.MEMBERS)
-      .upsert({
-        id: member.id,
-        name: member.name,
-        status: member.status,
-        joinedAt: member.joinedAt,
-        notes: member.notes,
-        createdAt: member.createdAt,
-        degree: member.degree,
-        isNominata: member.isNominata,
-        nominataRole: member.nominataRole,
-        isNominataIniciacao: member.isNominataIniciacao,
-        nominataIniciacaoRole: member.nominataIniciacaoRole,
-        isNominataElevacao: member.isNominataElevacao,
-        nominataElevacaoRole: member.nominataElevacaoRole,
-        management_term_id: member.managementTermId,
-        evaluation_start_date: member.evaluationStartDate
-      });
-    if (error) console.warn('Erro ao salvar membro no Supabase:', error.message);
+      .upsert(payload);
+    if (error) {
+      console.warn('Erro ao salvar membro no Supabase:', error.message);
+      throw error;
+    }
   } catch (err) {
     console.warn('Erro de rede ao salvar membro no Supabase:', err);
+    throw err;
   }
 }
 
@@ -310,19 +316,19 @@ export async function uploadLocalToSupabase(): Promise<{ success: boolean; messa
       const rows = localMembers.map(member => ({
         id: member.id,
         name: member.name,
-        status: member.status,
-        joinedAt: member.joinedAt,
-        notes: member.notes,
-        createdAt: member.createdAt,
-        degree: member.degree,
-        isNominata: member.isNominata,
-        nominataRole: member.nominataRole,
-        isNominataIniciacao: member.isNominataIniciacao,
-        nominataIniciacaoRole: member.nominataIniciacaoRole,
-        isNominataElevacao: member.isNominataElevacao,
-        nominataElevacaoRole: member.nominataElevacaoRole,
-        management_term_id: member.managementTermId,
-        evaluation_start_date: member.evaluationStartDate
+        status: member.status ?? 'active',
+        joinedAt: member.joinedAt || null,
+        notes: member.notes || null,
+        createdAt: member.createdAt || null,
+        degree: member.degree ?? 'iniciatico',
+        isNominata: member.isNominata ?? false,
+        nominataRole: member.nominataRole || null,
+        isNominataIniciacao: member.isNominataIniciacao ?? false,
+        nominataIniciacaoRole: member.nominataIniciacaoRole || null,
+        isNominataElevacao: member.isNominataElevacao ?? false,
+        nominataElevacaoRole: member.nominataElevacaoRole || null,
+        management_term_id: member.managementTermId || null,
+        evaluation_start_date: member.evaluationStartDate || null
       }));
       const { error } = await supabase.from(SUPABASE_TABLES.MEMBERS).upsert(rows);
       if (error) throw new Error(`Membros: ${error.message}`);
