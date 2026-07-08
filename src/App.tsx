@@ -744,9 +744,9 @@ function AppContent() {
   };
 
   // Filtered lists according to the active/selected management term
-  const filteredMembers = activeTerm 
+  const filteredMembers = (activeTerm 
     ? members.filter(m => m.managementTermId === activeTerm.id)
-    : members;
+    : members).filter(m => !m.id.startsWith('_custom_nominata_'));
 
   const filteredEvents = activeTerm
     ? events.filter(e => e.managementTermId === activeTerm.id)
@@ -852,6 +852,7 @@ function AppContent() {
               >
                 <NominataPage
                   members={filteredMembers}
+                  allMembers={members}
                   currentUser={currentUser}
                   onUpdateMembers={(updatedMembersList) => {
                     // Update full list but merge changes gracefully
@@ -865,6 +866,40 @@ function AppContent() {
                     updatedMembersList.forEach(m => {
                       pushMemberToSupabase(m);
                     });
+                  }}
+                  onSaveCustomNominata={(id, name, membersList) => {
+                    const virtualId = `_custom_nominata_${id}`;
+                    const existingIndex = members.findIndex(m => m.id === virtualId);
+                    const updatedVirtualMember: Member = {
+                      id: virtualId,
+                      name: name,
+                      status: 'inactive',
+                      degree: 'iniciatico',
+                      isNominata: false,
+                      joinedAt: '',
+                      notes: JSON.stringify(membersList),
+                      createdAt: new Date().toISOString(),
+                      managementTermId: activeTerm?.id,
+                      evaluationStartDate: ''
+                    };
+
+                    let updatedFullMembers = [...members];
+                    if (existingIndex >= 0) {
+                      updatedFullMembers[existingIndex] = updatedVirtualMember;
+                    } else {
+                      updatedFullMembers.push(updatedVirtualMember);
+                    }
+
+                    setMembers(updatedFullMembers);
+                    saveMembers(updatedFullMembers);
+                    pushMemberToSupabase(updatedVirtualMember);
+                  }}
+                  onDeleteCustomNominata={(id) => {
+                    const virtualId = `_custom_nominata_${id}`;
+                    const updatedFullMembers = members.filter(m => m.id !== virtualId);
+                    setMembers(updatedFullMembers);
+                    saveMembers(updatedFullMembers);
+                    deleteMemberFromSupabase(virtualId);
                   }}
                 />
               </Layout>
@@ -892,6 +927,7 @@ function AppContent() {
                   onUpdateEvent={handleUpdateEvent}
                   onDeleteEvent={handleDeleteEvent}
                   onMarkAttendanceRedirect={handleMarkAttendanceRedirect}
+                  allMembers={members}
                 />
               </Layout>
             ) : (

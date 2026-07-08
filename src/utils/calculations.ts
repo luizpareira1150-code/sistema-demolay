@@ -18,6 +18,22 @@ export function getMemberEligibility(
     isNominata = member.isNominataIniciacao ?? false;
   } else if (nominataType === 'elevacao') {
     isNominata = member.isNominataElevacao ?? false;
+  } else if (nominataType && nominataType !== 'none') {
+    // Check if it's a custom nominata stored as a virtual member
+    try {
+      const storedMembersData = localStorage.getItem('demolay_members');
+      if (storedMembersData) {
+        const parsedMembers: Member[] = JSON.parse(storedMembersData);
+        const virtualId = `_custom_nominata_${nominataType}`;
+        const virtualMember = parsedMembers.find(m => m.id === virtualId);
+        if (virtualMember) {
+          const membersList = JSON.parse(virtualMember.notes || '[]');
+          isNominata = membersList.some((m: any) => m.memberId === member.id);
+        }
+      }
+    } catch (err) {
+      console.error('Error checking custom nominata eligibility:', err);
+    }
   }
 
   const degree = member.degree ?? 'iniciatico';

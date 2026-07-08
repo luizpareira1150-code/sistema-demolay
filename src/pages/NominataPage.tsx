@@ -10,7 +10,9 @@ import {
   Users,
   Award,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  Trash2,
+  Plus
 } from 'lucide-react';
 import { Member, User } from '../types';
 import { useNotification } from '../components/NotificationContext';
@@ -19,11 +21,12 @@ import { canEditCurrentManagementTerm } from '../utils/permission';
 
 interface NominataPageProps {
   members: Member[];
+  allMembers?: Member[];
   currentUser: User;
   onUpdateMembers: (updatedMembers: Member[]) => void;
+  onSaveCustomNominata?: (id: string, name: string, membersList: Array<{ memberId: string; role: string }>) => void;
+  onDeleteCustomNominata?: (id: string) => void;
 }
-
-type NominataType = 'diretoria' | 'iniciacao' | 'elevacao';
 
 const PREDEFINED_ROLES = [
   'Mestre Conselheiro',
@@ -41,8 +44,11 @@ const PREDEFINED_ROLES = [
 
 export default function NominataPage({
   members,
+  allMembers = [],
   currentUser,
-  onUpdateMembers
+  onUpdateMembers,
+  onSaveCustomNominata,
+  onDeleteCustomNominata
 }: NominataPageProps) {
   const { showNotification } = useNotification();
   const { activeTerm } = useManagementTerm();
@@ -50,10 +56,14 @@ export default function NominataPage({
 
   const canModify = (currentUser.role === 'admin' || currentUser.role === 'diretoria' || currentUser.role === 'diretoria_admin') && canEditTerm;
 
-  // Active Nominata section
-  const [activeNominata, setActiveNominata] = useState<NominataType>('diretoria');
+  // Active Nominata section (can be 'diretoria', 'iniciacao', 'elevacao' or custom ID)
+  const [activeNominata, setActiveNominata] = useState<string>('diretoria');
   const [isEditing, setIsEditing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Custom nominata creation state
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newNominataName, setNewNominataName] = useState('');
 
   // Local draft states for editing
   // Map of memberId -> { checked: boolean, role: string }
@@ -62,20 +72,51 @@ export default function NominataPage({
   // Filter only active members of the chapter
   const activeMembersOfChapter = members.filter(m => m.status === 'active');
 
+  // Load custom nominatas for the active management term
+  const customNominatas = allMembers
+    .filter(m => m.id.startsWith('_custom_nominata_') && (!activeTerm || m.managementTermId === activeTerm.id))
+    .map(m => {
+      let parsedList: Array<{ memberId: string; role: string }> = [];
+      try {
+        parsedList = JSON.parse(m.notes || '[]');
+      } catch (e) {
+        console.error('Error parsing custom nominata notes:', e);
+      }
+      return {
+        id: m.id.replace('_custom_nominata_', ''),
+        name: m.name,
+        members: parsedList
+      };
+    });
+
   // Helper to extract actual members in a Nominata
-  const getNominataMembers = (type: NominataType) => {
-    return activeMembersOfChapter.filter(m => {
-      if (type === 'diretoria') return m.isNominata;
-      if (type === 'iniciacao') return m.isNominataIniciacao;
-      if (type === 'elevacao') return m.isNominataElevacao;
-      return false;
-    }).map(m => {
-      let role = '';
-      if (type === 'diretoria') role = m.nominataRole || 'Sem função especificada';
-      if (type === 'iniciacao') role = m.nominataIniciacaoRole || 'Sem função especificada';
-      if (type === 'elevacao') role = m.nominataElevacaoRole || 'Sem função especificada';
-      return { member: m, role };
-    }).sort((a, b) => a.member.name.localeCompare(b.member.name));
+  const getNominataMembers = (type: string) => {
+    if (type === 'diretoria' || type === 'iniciacao' || type === 'elevacao') {
+      return activeMembersOfChapter.filter(m => {
+        if (type === 'diretoria') return m.isNominata;
+        if (type === 'iniciacao') return m.isNominataIniciacao;
+        if (type === 'elevacao') return m.isNominataElevacao;
+        return false;
+      }).map(m => {
+        let role = '';
+        if (type === 'diretoria') role = m.nominataRole || 'Sem função especificada';
+        if (type === 'iniciacao') role = m.nominataIniciacaoRole || 'Sem função especificada';
+        if (type === 'elevacao') role = m.nominataElevacaoRole || 'Sem função especificada';
+        return { member: m, role };
+      }).sort((a, b) => a.member.name.localeCompare(b.member.name));
+    }
+
+    // Custom Nominata
+    const custom = customNominatas.find(cn => cn.id === type);
+    if (!custom) return [];
+
+    return custom.members.map(item => {
+      const member = activeMembersOfChapter.find(m => m.id === item.memberId);
+      return {
+        member: member || { id: item.memberId, name: 'Membro inativo ou inexistente', degree: 'iniciatico', status: 'inactive' } as Member,
+        role: item.role
+      };
+    }).filter(x => x.member.id !== 'unknown').sort((a, b) => a.member.name.localeCompare(b.member.name));
   };
 
   const currentNominataList = getNominataMembers(activeNominata);
@@ -85,23 +126,37 @@ export default function NominataPage({
     if (!canModify) return;
 
     const initialDraft: Record<string, { checked: boolean; role: string }> = {};
-    activeMembersOfChapter.forEach(m => {
-      let checked = false;
-      let role = '';
+    const isPredefined = ['diretoria', 'iniciacao', 'elevacao'].includes(activeNominata);
 
-      if (activeNominata === 'diretoria') {
-        checked = !!m.isNominata;
-        role = m.nominataRole || '';
-      } else if (activeNominata === 'iniciacao') {
-        checked = !!m.isNominataIniciacao;
-        role = m.nominataIniciacaoRole || '';
-      } else if (activeNominata === 'elevacao') {
-        checked = !!m.isNominataElevacao;
-        role = m.nominataElevacaoRole || '';
-      }
+    if (isPredefined) {
+      activeMembersOfChapter.forEach(m => {
+        let checked = false;
+        let role = '';
 
-      initialDraft[m.id] = { checked, role };
-    });
+        if (activeNominata === 'diretoria') {
+          checked = !!m.isNominata;
+          role = m.nominataRole || '';
+        } else if (activeNominata === 'iniciacao') {
+          checked = !!m.isNominataIniciacao;
+          role = m.nominataIniciacaoRole || '';
+        } else if (activeNominata === 'elevacao') {
+          checked = !!m.isNominataElevacao;
+          role = m.nominataElevacaoRole || '';
+        }
+
+        initialDraft[m.id] = { checked, role };
+      });
+    } else {
+      // Custom Nominata
+      const custom = customNominatas.find(cn => cn.id === activeNominata);
+      activeMembersOfChapter.forEach(m => {
+        const found = custom ? custom.members.find(x => x.memberId === m.id) : null;
+        initialDraft[m.id] = {
+          checked: !!found,
+          role: found ? found.role : ''
+        };
+      });
+    }
 
     setDraftSelections(initialDraft);
     setSearchTerm('');
@@ -140,35 +195,95 @@ export default function NominataPage({
 
   // Save changes back to storage / state
   const handleSave = () => {
-    const updatedMembersList = members.map(m => {
-      // If member is not active, keep untouched
-      if (m.status !== 'active') return m;
+    const isPredefined = ['diretoria', 'iniciacao', 'elevacao'].includes(activeNominata);
 
-      const draft = draftSelections[m.id];
-      if (!draft) return m;
+    if (isPredefined) {
+      const updatedMembersList = members.map(m => {
+        // If member is not active, keep untouched
+        if (m.status !== 'active') return m;
 
-      const updated = { ...m };
-      if (activeNominata === 'diretoria') {
-        updated.isNominata = draft.checked;
-        updated.nominataRole = draft.checked ? draft.role.trim() : '';
-      } else if (activeNominata === 'iniciacao') {
-        updated.isNominataIniciacao = draft.checked;
-        updated.nominataIniciacaoRole = draft.checked ? draft.role.trim() : '';
-      } else if (activeNominata === 'elevacao') {
-        updated.isNominataElevacao = draft.checked;
-        updated.nominataElevacaoRole = draft.checked ? draft.role.trim() : '';
+        const draft = draftSelections[m.id];
+        if (!draft) return m;
+
+        const updated = { ...m };
+        if (activeNominata === 'diretoria') {
+          updated.isNominata = draft.checked;
+          updated.nominataRole = draft.checked ? draft.role.trim() : '';
+        } else if (activeNominata === 'iniciacao') {
+          updated.isNominataIniciacao = draft.checked;
+          updated.nominataIniciacaoRole = draft.checked ? draft.role.trim() : '';
+        } else if (activeNominata === 'elevacao') {
+          updated.isNominataElevacao = draft.checked;
+          updated.nominataElevacaoRole = draft.checked ? draft.role.trim() : '';
+        }
+
+        return updated;
+      });
+
+      onUpdateMembers(updatedMembersList);
+      setIsEditing(false);
+      showNotification('success', 'Nominata atualizada com sucesso e conectada às frequências de reuniões correspondentes!');
+    } else {
+      // Custom Nominata
+      const membersList = (Object.entries(draftSelections) as Array<[string, { checked: boolean; role: string }]>)
+        .filter(([_, sel]) => sel.checked)
+        .map(([memberId, sel]) => ({
+          memberId,
+          role: sel.role
+        }));
+
+      const custom = customNominatas.find(cn => cn.id === activeNominata);
+      const name = custom ? custom.name : 'Nominata Customizada';
+
+      if (onSaveCustomNominata) {
+        onSaveCustomNominata(activeNominata, name, membersList);
       }
+      setIsEditing(false);
+      showNotification('success', 'Nominata avulsa atualizada com sucesso!');
+    }
+  };
 
-      return updated;
-    });
+  const handleDelete = () => {
+    const custom = customNominatas.find(cn => cn.id === activeNominata);
+    if (!custom) return;
 
-    onUpdateMembers(updatedMembersList);
-    setIsEditing(false);
-    showNotification('success', 'Nominata atualizada com sucesso e conectada às frequências de reuniões correspondentes!');
+    if (!confirm(`Tem certeza que deseja excluir a nominata "${custom.name}"?`)) {
+      return;
+    }
+
+    if (onDeleteCustomNominata) {
+      onDeleteCustomNominata(activeNominata);
+      showNotification('success', 'Nominata avulsa excluída com sucesso!');
+      setActiveNominata('diretoria');
+    }
   };
 
   const handleCancel = () => {
     setIsEditing(false);
+  };
+
+  const handleCreateCustomNominata = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newNominataName.trim()) return;
+
+    const newId = `custom_${Math.random().toString(36).substring(2, 9)}`;
+    if (onSaveCustomNominata) {
+      onSaveCustomNominata(newId, newNominataName.trim(), []);
+      showNotification('success', `Nominata "${newNominataName}" criada com sucesso!`);
+      setActiveNominata(newId);
+      setIsCreateModalOpen(false);
+      setNewNominataName('');
+      
+      // Put directly in edit mode for ease of setup!
+      setTimeout(() => {
+        setIsEditing(true);
+        const initialDraft: Record<string, { checked: boolean; role: string }> = {};
+        activeMembersOfChapter.forEach(m => {
+          initialDraft[m.id] = { checked: false, role: '' };
+        });
+        setDraftSelections(initialDraft);
+      }, 50);
+    }
   };
 
   // Filter members list under search
@@ -176,7 +291,17 @@ export default function NominataPage({
     m.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const getNominataDetails = (type: NominataType) => {
+  const getNominataDetails = (type: string) => {
+    const custom = customNominatas.find(cn => cn.id === type);
+    if (custom) {
+      return {
+        title: custom.name,
+        description: 'Nominata avulsa criada sob demanda para atividades específicas do Capítulo. Esta lista pode ser selecionada na criação de qualquer atividade para vincular a obrigatoriedade de presença dos escalados.',
+        badge: 'Avulsa / Customizada',
+        color: 'from-purple-500/10 to-purple-600/5 border-purple-250 text-purple-800'
+      };
+    }
+
     switch (type) {
       case 'diretoria':
         return {
@@ -199,6 +324,13 @@ export default function NominataPage({
           badge: 'Estudos de Grau',
           color: 'from-indigo-500/10 to-indigo-600/5 border-indigo-200 text-indigo-800'
         };
+      default:
+        return {
+          title: 'Nominata Desconhecida',
+          description: '',
+          badge: '',
+          color: ''
+        };
     }
   };
 
@@ -218,54 +350,126 @@ export default function NominataPage({
             <Sparkles className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />
           </h3>
           <p className="text-xs text-slate-500 max-w-2xl leading-relaxed">
-            Monte escalações fixas para as cerimônias e reuniões do Capítulo neste semestre. O sistema determinará automaticamente a obrigatoriedade dos participantes com base na Nominata vinculada a cada tipo de evento.
+            Monte escalações fixas ou avulsas para as cerimônias e reuniões do Capítulo neste semestre. O sistema determinará automaticamente a obrigatoriedade dos participantes com base na Nominata vinculada a cada tipo de evento.
           </p>
         </div>
       </div>
 
-      {/* Nominata Selection Tabs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {(['diretoria', 'iniciacao', 'elevacao'] as NominataType[]).map(type => {
-          const det = getNominataDetails(type);
-          const active = activeNominata === type;
-          const assignedCount = getNominataMembers(type).length;
+      {/* Predefined Nominatas Section */}
+      <div className="space-y-2">
+        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Nominatas Padrão do Capítulo</h4>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {(['diretoria', 'iniciacao', 'elevacao'] as string[]).map(type => {
+            const det = getNominataDetails(type);
+            const active = activeNominata === type;
+            const assignedCount = getNominataMembers(type).length;
 
-          return (
-            <button
-              key={type}
-              onClick={() => {
-                if (isEditing) {
-                  if (confirm('Você está editando a Nominata atual. Deseja descartar as alterações para trocar de aba?')) {
-                    setIsEditing(false);
+            return (
+              <button
+                key={type}
+                onClick={() => {
+                  if (isEditing) {
+                    if (confirm('Você está editando a Nominata atual. Deseja descartar as alterações para trocar de aba?')) {
+                      setIsEditing(false);
+                      setActiveNominata(type);
+                    }
+                  } else {
                     setActiveNominata(type);
                   }
-                } else {
-                  setActiveNominata(type);
-                }
-              }}
-              className={`p-4 rounded-xl border text-left flex flex-col justify-between h-28 cursor-pointer transition duration-150 ${
-                active
-                  ? 'bg-white border-slate-900 shadow-sm ring-1 ring-slate-900'
-                  : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
-              }`}
+                }}
+                className={`p-4 rounded-xl border text-left flex flex-col justify-between h-28 cursor-pointer transition duration-150 ${
+                  active
+                    ? 'bg-white border-slate-900 shadow-sm ring-1 ring-slate-900'
+                    : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex justify-between items-start w-full">
+                  <span className="text-xs font-bold text-slate-800 font-display truncate pr-1">
+                    {det.title}
+                  </span>
+                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold border ${det.color}`}>
+                    {det.badge}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 mt-4">
+                  <Users className="h-4 w-4 text-slate-400" />
+                  <span className="text-xs text-slate-505 font-semibold">
+                    <strong>{assignedCount}</strong> {assignedCount === 1 ? 'membro escalado' : 'membros escalados'}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Custom Nominatas (Nominatas Avulsas) Section */}
+      <div className="pt-4 border-t border-slate-100 space-y-3">
+        <div className="flex justify-between items-center">
+          <div>
+            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Nominatas Avulsas / Customizadas</h4>
+            <p className="text-[10px] text-slate-400 mt-0.5">Crie nominatas para situações específicas e vincule-as às atividades.</p>
+          </div>
+          {canModify && (
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition cursor-pointer shadow-sm"
             >
-              <div className="flex justify-between items-start w-full">
-                <span className="text-xs font-bold text-slate-800 font-display truncate pr-1">
-                  {det.title}
-                </span>
-                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold border ${det.color}`}>
-                  {det.badge}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 mt-4">
-                <Users className="h-4 w-4 text-slate-400" />
-                <span className="text-xs text-slate-505 font-semibold">
-                  <strong>{assignedCount}</strong> {assignedCount === 1 ? 'membro escalado' : 'membros escalados'}
-                </span>
-              </div>
+              <Plus className="h-3.5 w-3.5" />
+              Nova Nominata Avulsa
             </button>
-          );
-        })}
+          )}
+        </div>
+
+        {customNominatas.length === 0 ? (
+          <div className="p-6 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center">
+            <p className="text-xs text-slate-450 font-medium">Nenhuma nominata avulsa criada ainda para esta gestão.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {customNominatas.map(cn => {
+              const active = activeNominata === cn.id;
+              const det = getNominataDetails(cn.id);
+              const assignedCount = cn.members.length;
+
+              return (
+                <button
+                  key={cn.id}
+                  onClick={() => {
+                    if (isEditing) {
+                      if (confirm('Você está editando a Nominata atual. Deseja descartar as alterações para trocar de aba?')) {
+                        setIsEditing(false);
+                        setActiveNominata(cn.id);
+                      }
+                    } else {
+                      setActiveNominata(cn.id);
+                    }
+                  }}
+                  className={`p-4 rounded-xl border text-left flex flex-col justify-between h-28 cursor-pointer transition duration-155 ${
+                    active
+                      ? 'bg-white border-slate-900 shadow-sm ring-1 ring-slate-900'
+                      : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex justify-between items-start w-full">
+                    <span className="text-xs font-bold text-slate-800 font-display truncate pr-1">
+                      {cn.name}
+                    </span>
+                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold border ${det.color}`}>
+                      Avulsa
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-4">
+                    <Users className="h-4 w-4 text-slate-400" />
+                    <span className="text-xs text-slate-505 font-semibold">
+                      <strong>{assignedCount}</strong> {assignedCount === 1 ? 'membro escalado' : 'membros escalados'}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Nominata Details Panel */}
@@ -283,15 +487,27 @@ export default function NominataPage({
             </p>
           </div>
           
-          {canModify && !isEditing && (
-            <button
-              onClick={handleStartEdit}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 transition text-slate-950 text-xs font-bold cursor-pointer shrink-0 shadow-sm"
-            >
-              <Edit className="h-3.5 w-3.5" />
-              Editar Escalados
-            </button>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {!['diretoria', 'iniciacao', 'elevacao'].includes(activeNominata) && canModify && !isEditing && (
+              <button
+                onClick={handleDelete}
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-750 transition text-white text-xs font-bold cursor-pointer shadow-sm"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Excluir Nominata
+              </button>
+            )}
+
+            {canModify && !isEditing && (
+              <button
+                onClick={handleStartEdit}
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-650 transition text-slate-950 text-xs font-bold cursor-pointer shadow-sm"
+              >
+                <Edit className="h-3.5 w-3.5" />
+                Editar Escalados
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Read Block representation */}
@@ -302,7 +518,7 @@ export default function NominataPage({
                 <Shield className="h-10 w-10 text-slate-300 mb-4" />
                 <p className="text-sm font-bold text-slate-700">Nenhum membro escalado nesta Nominata</p>
                 <p className="text-xs text-slate-500 mt-1 max-w-md">
-                  Para que o sistema considere a obrigatoriedade adaptativa nas frequências rituais, clique em "Editar Escalados" acima e monte a listagem.
+                  Para que o sistema considere a obrigatoriedade adaptativa nas frequências, clique em "Editar Escalados" acima e selecione os membros.
                 </p>
               </div>
             ) : (
@@ -386,7 +602,7 @@ export default function NominataPage({
                             className="text-xs font-semibold text-slate-800 cursor-pointer flex-1 select-none pr-2"
                           >
                             <p className="font-bold text-slate-900">{member.name}</p>
-                            <p className="text-[10px] text-slate-450 mt-0.5 font-normal">
+                            <p className="text-[10px] text-slate-455 mt-0.5 font-normal">
                               {member.degree === 'demolay' ? 'Grau DeMolay' : 'Grau Iniciático'}
                               {member.isNominata && activeNominata !== 'diretoria' && ' • Diretoria'}
                               {member.isNominataIniciacao && activeNominata !== 'iniciacao' && ' • Iniciação'}
@@ -448,6 +664,56 @@ export default function NominataPage({
           </div>
         )}
       </div>
+
+      {/* Modal para criar nova nominata avulsa */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-lg border border-slate-200 max-w-md w-full overflow-hidden animate-fade-in">
+            <div className="p-6 border-b border-slate-150 flex justify-between items-center">
+              <h3 className="text-base font-bold text-slate-900 font-display flex items-center gap-2">
+                <Shield className="h-5 w-5 text-slate-900" />
+                Criar Nominata Avulsa
+              </h3>
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="text-slate-400 hover:text-slate-650"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateCustomNominata} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-705 uppercase tracking-wider mb-1">
+                  Nome da Nominata
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Nominata de Sindicância, Eleição..."
+                  value={newNominataName}
+                  onChange={e => setNewNominataName(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 text-xs font-bold transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition shadow-sm"
+                >
+                  Criar e Configurar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -23,6 +23,7 @@ interface EventsPageProps {
   onUpdateEvent: (event: Event) => void;
   onDeleteEvent: (id: string) => void;
   onMarkAttendanceRedirect: (event: Event) => void;
+  allMembers?: any[];
 }
 
 export default function EventsPage({
@@ -31,13 +32,22 @@ export default function EventsPage({
   onAddEvent,
   onUpdateEvent,
   onDeleteEvent,
-  onMarkAttendanceRedirect
+  onMarkAttendanceRedirect,
+  allMembers = []
 }: EventsPageProps) {
   const { showNotification } = useNotification();
 
   const { activeTerm } = useManagementTerm();
   const canEditTerm = canEditCurrentManagementTerm(currentUser, activeTerm);
   const allowedCategories = getAllowedEventCategoriesForProfile(currentUser);
+
+  // Load custom nominatas for the active management term
+  const customNominatas = allMembers
+    .filter(m => m.id.startsWith('_custom_nominata_') && (!activeTerm || m.managementTermId === activeTerm.id))
+    .map(m => ({
+      id: m.id.replace('_custom_nominata_', ''),
+      name: m.name
+    }));
 
   // Permission checks
   const canModify = (currentUser.role === 'admin' || currentUser.role === 'diretoria' || currentUser.role === 'diretoria_admin') && canEditTerm;
@@ -557,6 +567,11 @@ export default function EventsPage({
                   <option value="diretoria">Nominata da Diretoria (Membros e Cargos do Semestre)</option>
                   <option value="iniciacao">Nominata de Iniciação (Membros escalados para Cerimônia & Ensaios)</option>
                   <option value="elevacao">Nominata de Elevação (Membros escalados para Cerimônia & Ensaios)</option>
+                  {customNominatas.map(cn => (
+                    <option key={cn.id} value={cn.id}>
+                      Nominata: {cn.name} (Customizada)
+                    </option>
+                  ))}
                   <option value="none">Nenhuma Nominata (Não requer cargos específicos)</option>
                 </select>
                 <p className="text-[10px] text-slate-450 mt-1 font-medium leading-relaxed">

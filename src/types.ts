@@ -38,8 +38,18 @@ export interface Event {
   createdAt: string;
   requiredFor: Array<'iniciatico' | 'demolay' | 'nominata'>;
   optionalFor: Array<'iniciatico' | 'demolay' | 'nominata'>;
-  nominataType?: 'diretoria' | 'iniciacao' | 'elevacao' | 'none';
+  nominataType?: string;
   managementTermId?: string;
+}
+
+export interface CustomNominata {
+  id: string;
+  name: string;
+  managementTermId?: string;
+  members: Array<{
+    memberId: string;
+    role: string;
+  }>;
 }
 
 export type AttendanceStatus = 'present' | 'absent' | 'justified' | 'not_attended' | 'not_applicable';
