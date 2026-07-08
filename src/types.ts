@@ -20,13 +20,14 @@ export interface Member {
 
 export type EventCategory = 
   | 'ritualistica' 
-  | 'terca_burocratica' 
-  | 'quinta_burocratica' 
+  | 'burocratica'
   | 'filantropia' 
   | 'limpeza' 
   | 'ensaio_iniciacao' 
   | 'ensaio_elevacao' 
-  | 'outros';
+  | 'outros'
+  | 'terca_burocratica'
+  | 'quinta_burocratica';
 
 export interface Event {
   id: string;

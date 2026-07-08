@@ -231,6 +231,7 @@ export function calculateChapterMandatoryFrequencyAverage(
 
 export const CATEGORY_LABELS: Record<EventCategory, string> = {
   ritualistica: 'Reunião Ritualística',
+  burocratica: 'Burocrática',
   terca_burocratica: 'Terça Burocrática',
   quinta_burocratica: 'Quinta Burocrática',
   filantropia: 'Filantropia',

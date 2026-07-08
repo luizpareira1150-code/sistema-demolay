@@ -472,6 +472,7 @@ function AppContent() {
 
       const eventCategoryLabel = targetEvent ? (
         targetEvent.category === 'ritualistica' ? 'Ritualística' :
+        targetEvent.category === 'burocratica' ? 'Burocrática' :
         targetEvent.category === 'terca_burocratica' ? 'Terça-feira Burocrática' :
         targetEvent.category === 'quinta_burocratica' ? 'Quinta-feira Burocrática' :
         targetEvent.category === 'filantropia' ? 'Filantropia' :

@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS "demolay_events" (
   "title" TEXT NOT NULL,
   "category" TEXT NOT NULL CHECK ("category" IN (
     'ritualistica', 
+    'burocratica',
     'terca_burocratica', 
     'quinta_burocratica', 
     'filantropia', 
@@ -223,7 +224,18 @@ CREATE INDEX IF NOT EXISTS "idx_audit_logs_created_at" ON "audit_logs"("created_
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
-   NEW."updatedAt" = NOW();
+   -- Tenta atualizar a coluna "updatedAt" (CamelCase) se ela existir
+   BEGIN
+      NEW."updatedAt" = NOW();
+   EXCEPTION WHEN undefined_column THEN
+      -- Se falhar porque a coluna "updatedAt" não existe, tenta atualizar "updated_at" (snake_case)
+      BEGIN
+         NEW.updated_at = NOW();
+      EXCEPTION WHEN undefined_column THEN
+         -- Se nenhuma das duas colunas existir, apenas ignora e não gera erro
+         NULL;
+      END;
+   END;
    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

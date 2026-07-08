@@ -23,6 +23,11 @@ export function getEventCategoryPreset(category: EventCategory): {
         requiredFor: ['iniciatico', 'demolay', 'nominata'],
         optionalFor: []
       };
+    case 'burocratica':
+      return {
+        requiredFor: ['iniciatico', 'demolay', 'nominata'],
+        optionalFor: []
+      };
     case 'terca_burocratica':
       return {
         requiredFor: ['iniciatico', 'nominata'],
@@ -73,8 +78,12 @@ function getEventCategoryPresetForMigration(category: string): {
         requiredFor: ['iniciatico', 'demolay', 'nominata'],
         optionalFor: []
       };
-    case 'terca_burocratica':
     case 'burocratica':
+      return {
+        requiredFor: ['iniciatico', 'demolay', 'nominata'],
+        optionalFor: []
+      };
+    case 'terca_burocratica':
       return {
         requiredFor: ['iniciatico', 'nominata'],
         optionalFor: ['demolay']
@@ -189,9 +198,9 @@ export const getEvents = (): Event[] => {
   const migratedEvents = events.map(e => {
     let copy = { ...e };
     
-    // Migrate legacy 'burocratica' category to 'terca_burocratica'
-    if (copy.category === 'burocratica') {
-      copy.category = 'terca_burocratica';
+    // Migrate legacy specific bureaucratic categories to unified 'burocratica'
+    if (copy.category === 'terca_burocratica' || copy.category === 'quinta_burocratica') {
+      copy.category = 'burocratica';
       migrated = true;
     }
 

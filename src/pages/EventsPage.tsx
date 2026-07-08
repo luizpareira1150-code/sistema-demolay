@@ -263,11 +263,13 @@ export default function EventsPage({
               className="w-full border border-slate-300 rounded-lg p-2.5 text-xs bg-slate-55 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:bg-white"
             >
               <option value="all">Todas as categorias</option>
-              {Object.entries(CATEGORY_LABELS).map(([key, value]) => (
-                <option key={key} value={key}>
-                  {value}
-                </option>
-              ))}
+              {Object.entries(CATEGORY_LABELS)
+                .filter(([key]) => key !== 'terca_burocratica' && key !== 'quinta_burocratica')
+                .map(([key, value]) => (
+                  <option key={key} value={key}>
+                    {value}
+                  </option>
+                ))}
             </select>
           </div>
 
@@ -338,6 +340,7 @@ export default function EventsPage({
             // Stylize based on category
             let badgeStyle = 'bg-slate-100 text-slate-800 border-slate-200';
             if (event.category === 'ritualistica') badgeStyle = 'bg-blue-100 text-blue-800 border-blue-200';
+            if (event.category === 'burocratica') badgeStyle = 'bg-indigo-100 text-indigo-800 border-indigo-205';
             if (event.category === 'terca_burocratica') badgeStyle = 'bg-indigo-100 text-indigo-800 border-indigo-205';
             if (event.category === 'quinta_burocratica') badgeStyle = 'bg-violet-100 text-violet-850 border-violet-200';
             if (event.category === 'filantropia') badgeStyle = 'bg-emerald-100 text-emerald-800 border-emerald-200';
@@ -510,7 +513,10 @@ export default function EventsPage({
                   className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:opacity-75 disabled:cursor-not-allowed disabled:bg-slate-50"
                 >
                   {Object.entries(CATEGORY_LABELS)
-                    .filter(([key]) => allowedCategories === 'all' || allowedCategories.includes(key as EventCategory))
+                    .filter(([key]) => {
+                      if (key === 'terca_burocratica' || key === 'quinta_burocratica') return false;
+                      return allowedCategories === 'all' || allowedCategories.includes(key as EventCategory);
+                    })
                     .map(([key, label]) => (
                       <option key={key} value={key}>
                         {label}

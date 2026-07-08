@@ -25,8 +25,7 @@ export default function MemberProfileModal({
   // 2. Calculate stats by each category
   const categories: EventCategory[] = [
     'ritualistica',
-    'terca_burocratica',
-    'quinta_burocratica',
+    'burocratica',
     'filantropia',
     'limpeza',
     'ensaio_iniciacao',

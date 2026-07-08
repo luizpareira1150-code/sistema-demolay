@@ -108,13 +108,13 @@ export const defaultEvents: Event[] = [
   },
   {
     id: 'e2',
-    title: 'Terça Burocrática de Planejamento',
-    category: 'terca_burocratica',
+    title: 'Burocrática de Planejamento',
+    category: 'burocratica',
     date: '2026-06-03',
     description: 'Reunião de diretoria para alinhamento de tesouraria de fim de mês.',
     createdAt: '2026-06-03T19:00:00Z',
-    requiredFor: ['iniciatico', 'nominata'],
-    optionalFor: ['demolay']
+    requiredFor: ['iniciatico', 'demolay', 'nominata'],
+    optionalFor: []
   },
   {
     id: 'e3',
