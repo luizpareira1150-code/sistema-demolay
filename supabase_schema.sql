@@ -146,7 +146,7 @@ ALTER TABLE "profiles" ADD CONSTRAINT "profiles_management_term_required_for_dir
 -- --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS "system_settings" (
   "id" TEXT PRIMARY KEY DEFAULT 'current',
-  "plusWeight" NUMERIC NOT NULL DEFAULT 0.5,
+  "plusWeight" NUMERIC NOT NULL DEFAULT 0.25,
   "greenThreshold" INTEGER NOT NULL DEFAULT 70,
   "yellowThreshold" INTEGER NOT NULL DEFAULT 60,
   "updatedAt" TIMESTAMPTZ DEFAULT NOW()
@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS "system_settings" (
 
 -- Inserir configuração padrão semente
 INSERT INTO "system_settings" ("id", "plusWeight", "greenThreshold", "yellowThreshold")
-VALUES ('current', 0.5, 70, 60)
+VALUES ('current', 0.25, 70, 60)
 ON CONFLICT ("id") DO NOTHING;
 
 -- --------------------------------------------------------------------
@@ -263,9 +263,47 @@ DROP TRIGGER IF EXISTS trigger_update_settings_timestamp ON "system_settings";
 CREATE TRIGGER trigger_update_settings_timestamp BEFORE UPDATE ON "system_settings"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-DROP TRIGGER IF EXISTS trigger_update_management_terms_timestamp ON "management_terms";
-CREATE TRIGGER trigger_update_management_terms_timestamp BEFORE UPDATE ON "management_terms"
-FOR EACH ROW EXECUTE FUNCTION update_updated_at_snake_case_column();
+-- Função para calcular e preencher eligibility automaticamente na tabela demolay_attendance
+CREATE OR REPLACE FUNCTION calculate_attendance_eligibility()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_event RECORD;
+  v_member RECORD;
+BEGIN
+  SELECT * INTO v_event FROM "demolay_events" WHERE "id" = NEW."eventId";
+  SELECT * INTO v_member FROM "demolay_members" WHERE "id" = NEW."memberId";
+
+  IF v_event IS NOT NULL AND v_member IS NOT NULL THEN
+    -- Verificar Obrigatório
+    IF (
+      (COALESCE(v_event."nominataType", 'none') = 'iniciacao' AND COALESCE(v_member."isNominataIniciacao", false) AND v_event."requiredFor" @> jsonb_build_array('nominata'))
+      OR (COALESCE(v_event."nominataType", 'none') = 'elevacao' AND COALESCE(v_member."isNominataElevacao", false) AND v_event."requiredFor" @> jsonb_build_array('nominata'))
+      OR (COALESCE(v_event."nominataType", 'none') NOT IN ('iniciacao', 'elevacao', 'none') AND COALESCE(v_member."isNominata", false) AND v_event."requiredFor" @> jsonb_build_array('nominata'))
+      OR (v_event."requiredFor" @> jsonb_build_array(COALESCE(v_member."degree", 'iniciatico')))
+    ) THEN
+      NEW."eligibility" := 'required';
+    -- Verificar Opcional
+    ELSIF (
+      (COALESCE(v_event."nominataType", 'none') = 'iniciacao' AND COALESCE(v_member."isNominataIniciacao", false) AND v_event."optionalFor" @> jsonb_build_array('nominata'))
+      OR (COALESCE(v_event."nominataType", 'none') = 'elevacao' AND COALESCE(v_member."isNominataElevacao", false) AND v_event."optionalFor" @> jsonb_build_array('nominata'))
+      OR (COALESCE(v_event."nominataType", 'none') NOT IN ('iniciacao', 'elevacao', 'none') AND COALESCE(v_member."isNominata", false) AND v_event."optionalFor" @> jsonb_build_array('nominata'))
+      OR (v_event."optionalFor" @> jsonb_build_array(COALESCE(v_member."degree", 'iniciatico')))
+    ) THEN
+      NEW."eligibility" := 'optional';
+    ELSE
+      NEW."eligibility" := 'not_applicable';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_calculate_attendance_eligibility ON "demolay_attendance";
+CREATE TRIGGER trigger_calculate_attendance_eligibility
+BEFORE INSERT OR UPDATE ON "demolay_attendance"
+FOR EACH ROW EXECUTE FUNCTION calculate_attendance_eligibility();
+
 
 -- ====================================================================
 -- RLS (ROW LEVEL SECURITY) & POLÍTICAS

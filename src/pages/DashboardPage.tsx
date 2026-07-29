@@ -13,7 +13,7 @@ import {
 import { Member, Event, Attendance, MemberStats } from '../types';
 import StatCard from '../components/StatCard';
 import ProgressBar from '../components/ProgressBar';
-import { calculateMemberStats, calculateChapterAverage, calculateChapterMandatoryFrequencyAverage, EXTRA_PARTICIPATION_WEIGHT } from '../utils/calculations';
+import { calculateMemberStats, calculateChapterAverage, calculateChapterMandatoryFrequencyAverage, sortMemberStatsList, formatPercent } from '../utils/calculations';
 
 interface DashboardPageProps {
   members: Member[];
@@ -51,37 +51,12 @@ export default function DashboardPage({
   const chapterAverage = calculateChapterAverage(members, events, attendances);
   const chapterMandatoryAverage = calculateChapterMandatoryFrequencyAverage(members, events, attendances);
 
-  // Compute overall extra metrics totals for dashboard
-  const totalExtraParticipations = statsList.reduce((acc, curr) => acc + curr.extraParticipations, 0);
-  const totalExtraComputedPoints = statsList.reduce((acc, curr) => acc + curr.extraComputedPoints, 0);
+  // Compute overall optional metrics totals for dashboard
+  const totalOptionalPresences = statsList.reduce((acc, curr) => acc + curr.optionalPresences, 0);
+  const totalOptionalUsed = statsList.reduce((acc, curr) => acc + curr.optionalUsed, 0);
 
   // Ranking Top 5 (sort descending using strict multi-criteria rules)
-  const topMembers = [...statsList]
-    .sort((a, b) => {
-      if (!a.hasConsideredEvents && b.hasConsideredEvents) return 1;
-      if (a.hasConsideredEvents && !b.hasConsideredEvents) return -1;
-      if (!a.hasConsideredEvents && !b.hasConsideredEvents) return a.member.name.localeCompare(b.member.name);
-      
-      // Rule 1: maior porcentagem final
-      if (b.finalPercentage !== a.finalPercentage) {
-        return b.finalPercentage - a.finalPercentage;
-      }
-      // Rule 2: maior frequência obrigatória
-      if (b.mandatoryFrequency !== a.mandatoryFrequency) {
-        return b.mandatoryFrequency - a.mandatoryFrequency;
-      }
-      // Rule 3: maior número de presenças obrigatórias
-      if (b.requiredPresences !== a.requiredPresences) {
-        return b.requiredPresences - a.requiredPresences;
-      }
-      // Rule 4: maior número de participações extras
-      if (b.extraParticipations !== a.extraParticipations) {
-        return b.extraParticipations - a.extraParticipations;
-      }
-      // Rule 5: ordem alfabética
-      return a.member.name.localeCompare(b.member.name);
-    })
-    .slice(0, 5);
+  const topMembers = sortMemberStatsList(statsList).slice(0, 5);
 
   // Highlight members in the Red Zone
   const redZoneList = statsList.filter(s => s.hasConsideredEvents && s.zone === 'red');
@@ -102,7 +77,7 @@ export default function DashboardPage({
             Capítulo Oficial DeMolay
           </h2>
           <p className="text-slate-400 text-sm max-w-xl">
-            Bem-vindo ao Painel de Avaliação de presença e envolvimento. Acompanhe abaixo o resumo das atividades rituais, comissões coletivas e engajamento geral.
+            A porcentagem final considera as presenças em atividades obrigatórias e atividades opcionais.
           </p>
         </div>
         <div className="flex bg-slate-800/80 border border-slate-700/60 p-4 rounded-xl items-center gap-3 shrink-0">
@@ -144,15 +119,15 @@ export default function DashboardPage({
           </div>
         </div>
 
-        {/* Card 3: Participações Extras (Plus) */}
+        {/* Card 3: Atividades Opcionais */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between hover:shadow-md transition duration-200">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Atividades Extras (Plus)</p>
-            <h3 className="text-3xl font-extrabold mt-2 text-indigo-650 font-display">+{totalExtraParticipations}</h3>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Atividades Opcionais</p>
+            <h3 className="text-3xl font-extrabold mt-2 text-indigo-650 font-display">+{totalOptionalPresences}</h3>
           </div>
           <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100 text-[10px] font-bold text-slate-500">
-            <span>Extras Computados:</span>
-            <span className="text-indigo-650 font-black">+{totalExtraComputedPoints} pts (Peso: {EXTRA_PARTICIPATION_WEIGHT})</span>
+            <span>Opcionais Utilizadas:</span>
+            <span className="text-indigo-650 font-black">{totalOptionalUsed} presenças (0,25 cré/cada)</span>
           </div>
         </div>
 
@@ -251,9 +226,11 @@ export default function DashboardPage({
                         <span className={`text-sm font-black ${
                           stat.zone === 'green' ? 'text-emerald-600' : stat.zone === 'yellow' ? 'text-amber-550' : 'text-rose-500'
                         }`}>
-                          {stat.hasConsideredEvents ? `${stat.finalPercentage}%` : 'S/E'}
+                          {formatPercent(stat.rawFinalPercentage, stat.hasConsideredEvents)}
                         </span>
-                        <p className="text-[9px] font-bold text-slate-400">Freq. Obr: {stat.mandatoryFrequency}%</p>
+                        <p className="text-[9px] font-bold text-slate-400">
+                          Freq. Obr: {formatPercent(stat.rawMandatoryFrequency, stat.hasConsideredEvents)}
+                        </p>
                       </div>
                     </div>
                   );

@@ -60,7 +60,7 @@ export function getMemberEligibility(
   return 'not_applicable';
 }
 
-export const EXTRA_PARTICIPATION_WEIGHT = 0.5;
+export const EXTRA_PARTICIPATION_WEIGHT = 0.25;
 
 export function calculateMemberStats(
   member: Member,
@@ -129,28 +129,46 @@ export function calculateMemberStats(
     // 'not_applicable' does not enter any calculations
   }
 
-  // 3. Calculate consideredEvents and points
-  const requiredEventsConsidered = requiredPresences + requiredAbsences;
-  const extraComputedPoints = extraParticipations * EXTRA_PARTICIPATION_WEIGHT;
-  const hasConsideredEvents = requiredEventsConsidered > 0;
+  // 3. New Methodology Math Calculations:
+  // N = applicable mandatory events (requiredPresences + requiredAbsences)
+  // Note: requiredJustifications are excluded from N (removed from denominator)
+  const N = requiredPresences + requiredAbsences;
+  const P = requiredPresences;
+  const U = requiredAbsences; // unjustified absences (N - P)
+  const O = extraParticipations; // optional presences
+
+  // Gross optional credits: each optional yields 0.25 credit
+  const optionalCreditsGross = O * 0.25;
+
+  // Usable credits: min(optionalCreditsGross, U)
+  const optionalCreditsUsable = Math.min(optionalCreditsGross, U);
+
+  // Recovered presence units: usable credits * 0.75
+  const recoveredPresences = optionalCreditsUsable * 0.75;
+
+  // Optionals used and excess
+  // opcionaisUtilizadas = min(O, U * 4)
+  const optionalUsed = Math.min(O, U * 4);
+  // opcionaisExcedentes = max(O - optionalUsed, 0)
+  const optionalExcess = Math.max(O - optionalUsed, 0);
+
+  const hasConsideredEvents = N > 0;
 
   let mandatoryFrequency = 0;
-  if (hasConsideredEvents) {
-    mandatoryFrequency = (requiredPresences / requiredEventsConsidered) * 100;
-  }
-
+  let recoveredPercentage = 0;
   let finalPercentage = 0;
-  const finalDenominator = requiredEventsConsidered + extraComputedPoints;
-  if (finalDenominator > 0) {
-    finalPercentage = ((requiredPresences + extraComputedPoints) / finalDenominator) * 100;
-  } else if (extraParticipations > 0) {
-    // If no mandatory events but has extra participations, final percentage is 100% as per Scenario 6
-    finalPercentage = 100;
+
+  if (hasConsideredEvents) {
+    mandatoryFrequency = (P / N) * 100;
+    recoveredPercentage = (recoveredPresences / N) * 100;
+    // Final frequency capped at 100%
+    finalPercentage = Math.min(100, ((P + recoveredPresences) / N) * 100);
   }
 
-  // Round percentages with 1 decimal place precision
+  // Round percentages with 1 decimal place precision for UI presentation
   const roundedMandatoryFrequency = Math.round(mandatoryFrequency * 10) / 10;
   const roundedFinalPercentage = Math.round(finalPercentage * 10) / 10;
+  const roundedRecoveredPercentage = Math.round(recoveredPercentage * 10) / 10;
 
   // 4. Determine zone based on finalPercentage
   // Acima de 70% (i.e. finalPercentage > 70) = Zona Verde
@@ -175,26 +193,102 @@ export function calculateMemberStats(
     evaluationStartDate: member.evaluationStartDate,
     ignoredEventsBeforeEvaluationStart,
 
-    requiredPresences,
-    requiredAbsences,
-    requiredJustifications,
-    requiredEventsConsidered,
+    // New methodology detailed properties
+    applicableMandatoryEvents: N,
+    mandatoryPresences: P,
+    justifiedAbsences: requiredJustifications,
+    unjustifiedAbsences: U,
+    optionalPresences: O,
+    optionalCreditsGross,
+    optionalCreditsUsable,
+    recoveredPresences,
+    recoveredPercentage: roundedRecoveredPercentage,
+    optionalUsed,
+    optionalExcess,
 
-    extraParticipations,
-    extraComputedPoints,
+    // Existing / backward-compatible properties
+    requiredPresences: P,
+    requiredAbsences: U,
+    requiredJustifications,
+    requiredEventsConsidered: N,
+
+    extraParticipations: O,
+    extraComputedPoints: recoveredPresences,
 
     mandatoryFrequency: roundedMandatoryFrequency,
     finalPercentage: roundedFinalPercentage,
 
+    // Raw unrounded values for precise sorting
+    rawMandatoryFrequency: mandatoryFrequency,
+    rawFinalPercentage: finalPercentage,
+    rawRecoveredPercentage: recoveredPercentage,
+
     // Backward compatibility mappings
     attendanceRate: roundedFinalPercentage,
-    presents: requiredPresences,
-    absents: requiredAbsences,
+    presents: P,
+    absents: U,
     justified: requiredJustifications,
-    consideredEvents: requiredEventsConsidered,
-    hasConsideredEvents: hasConsideredEvents || extraParticipations > 0,
+    consideredEvents: N,
+    hasConsideredEvents,
     zone
   };
+}
+
+/**
+ * Format percentage for UI presentation.
+ * - Maximum 2 decimal places with trailing zero stripping (e.g., 90%, 97,5%, 95,63%).
+ * - Displays "Frequência ainda não calculada" when member has no applicable mandatory events.
+ */
+export function formatPercent(value: number | null | undefined, hasEvents: boolean = true): string {
+  if (!hasEvents || value === null || value === undefined || isNaN(value)) {
+    return 'Frequência ainda não calculada';
+  }
+  const rounded = Math.round(value * 100) / 100;
+  const formatted = rounded.toLocaleString('pt-BR', {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0
+  });
+  return `${formatted}%`;
+}
+
+/**
+ * Sorts ranking list strictly according to the official sequence:
+ * 1. Maior frequência final (raw unrounded);
+ * 2. Maior número total de presenças opcionais;
+ * 3. Maior frequência obrigatória (raw unrounded);
+ * 4. Maior sequência de presenças (fallback to 0);
+ * 5. Nome em ordem alfabética (pt-BR localeCompare).
+ * Members with no applicable events go after members with calculated frequencies.
+ */
+export function sortMemberStatsList(statsList: MemberStats[]): MemberStats[] {
+  return [...statsList].sort((a, b) => {
+    // Members without considered events go to bottom
+    if (!a.hasConsideredEvents && b.hasConsideredEvents) return 1;
+    if (a.hasConsideredEvents && !b.hasConsideredEvents) return -1;
+    if (!a.hasConsideredEvents && !b.hasConsideredEvents) {
+      return a.memberName.localeCompare(b.memberName, 'pt-BR');
+    }
+
+    // 1. Maior frequência final (unrounded)
+    if (b.rawFinalPercentage !== a.rawFinalPercentage) {
+      return b.rawFinalPercentage - a.rawFinalPercentage;
+    }
+
+    // 2. Maior número total de presenças opcionais
+    if (b.optionalPresences !== a.optionalPresences) {
+      return b.optionalPresences - a.optionalPresences;
+    }
+
+    // 3. Maior frequência obrigatória (unrounded)
+    if (b.rawMandatoryFrequency !== a.rawMandatoryFrequency) {
+      return b.rawMandatoryFrequency - a.rawMandatoryFrequency;
+    }
+
+    // 4. Sequence of presences (not tracked, equal)
+
+    // 5. Nome em ordem alfabética
+    return a.memberName.localeCompare(b.memberName, 'pt-BR');
+  });
 }
 
 // Calculate general average for active members (using finalPercentage)

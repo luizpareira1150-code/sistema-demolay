@@ -1,7 +1,7 @@
 import React from 'react';
 import { X, Award, CheckCircle, XCircle, AlertCircle, Info, Calendar, Clock } from 'lucide-react';
 import { Member, Event, Attendance, EventCategory } from '../types';
-import { calculateMemberStats, getMemberEligibility, CATEGORY_LABELS, EXTRA_PARTICIPATION_WEIGHT } from '../utils/calculations';
+import { calculateMemberStats, getMemberEligibility, CATEGORY_LABELS, formatPercent } from '../utils/calculations';
 import ProgressBar from './ProgressBar';
 
 interface MemberProfileModalProps {
@@ -17,7 +17,7 @@ export default function MemberProfileModal({
   attendances,
   onClose
 }: MemberProfileModalProps) {
-  const [activeTooltipId, setActiveTooltipId] = React.useState<string | null>(null);
+  const [activeTooltipEvent, setActiveTooltipEvent] = React.useState<Event | null>(null);
 
   // 1. Calculate general stats
   const generalStats = calculateMemberStats(member, events, attendances);
@@ -111,8 +111,8 @@ export default function MemberProfileModal({
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           
           {/* General progress banner */}
-          <div className="flex flex-col md:flex-row gap-6 bg-slate-50 p-5 rounded-xl border border-slate-200">
-            <div className="flex-1 min-w-0 space-y-2.5">
+          <div className="flex flex-col gap-5 bg-slate-50 p-5 rounded-xl border border-slate-200">
+            <div className="space-y-2.5">
               <div className="flex justify-between items-center bg-slate-100/50 p-1 px-2 rounded-md">
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">
                   Porcentagem Final (Principal)
@@ -127,44 +127,70 @@ export default function MemberProfileModal({
               </div>
               <ProgressBar value={generalStats.finalPercentage} hasEvents={generalStats.hasConsideredEvents} />
               
-              <div className="grid grid-cols-2 gap-4 pt-1 text-xs">
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Porcentagem Final:</span>
-                  <strong className="text-slate-800 text-sm font-display">{generalStats.finalPercentage}%</strong>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs">
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Presença Obrigatória:</span>
+                  <strong className="text-slate-800 text-sm font-display">
+                    {formatPercent(generalStats.rawMandatoryFrequency, generalStats.hasConsideredEvents)}
+                  </strong>
                 </div>
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Frequência Obrigatória:</span>
-                  <strong className="text-slate-700 text-sm">{generalStats.mandatoryFrequency}%</strong>
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Recuperação por Opcionais:</span>
+                  <strong className="text-indigo-600 text-sm font-display">
+                    {generalStats.unjustifiedAbsences > 0 && generalStats.recoveredPresences > 0
+                      ? `+${formatPercent(generalStats.rawRecoveredPercentage)}`
+                      : '0%'}
+                  </strong>
+                </div>
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Frequência Final:</span>
+                  <strong className="text-emerald-700 text-sm font-display">
+                    {formatPercent(generalStats.rawFinalPercentage, generalStats.hasConsideredEvents)}
+                  </strong>
                 </div>
               </div>
 
-              {generalStats.extraParticipations > 0 ? (
-                <p className="text-[11px] text-indigo-650 font-bold block pt-1.5 border-t border-slate-200/50">
-                  🚀 +{generalStats.extraParticipations} presenças extras computadas (+{generalStats.extraComputedPoints} pts, Peso Plus: {EXTRA_PARTICIPATION_WEIGHT})
-                </p>
-              ) : (
-                <p className="text-[10px] text-slate-450 italic block pt-1.5 border-t border-slate-200/50">
-                  Nenhuma participação opcional/plus registrada no período.
-                </p>
-              )}
+              {/* Atividades Opcionais e Faltas detailed breakdown */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-1 text-xs">
+                <div className="bg-indigo-50/50 p-2 rounded-lg border border-indigo-100 text-center">
+                  <span className="text-indigo-400 block text-[9px] uppercase font-bold">Atividades Opcionais</span>
+                  <strong className="text-indigo-900 text-sm">{generalStats.optionalPresences}</strong>
+                </div>
+                <div className="bg-indigo-50/50 p-2 rounded-lg border border-indigo-100 text-center">
+                  <span className="text-indigo-400 block text-[9px] uppercase font-bold">Opcionais Utilizadas</span>
+                  <strong className="text-indigo-900 text-sm">{generalStats.optionalUsed}</strong>
+                </div>
+                <div className="bg-indigo-50/50 p-2 rounded-lg border border-indigo-100 text-center">
+                  <span className="text-indigo-400 block text-[9px] uppercase font-bold">Opcionais Excedentes</span>
+                  <strong className="text-indigo-900 text-sm">{generalStats.optionalExcess}</strong>
+                </div>
+                <div className="bg-amber-50/50 p-2 rounded-lg border border-amber-100 text-center">
+                  <span className="text-amber-500 block text-[9px] uppercase font-bold">Faltas Justificadas</span>
+                  <strong className="text-amber-900 text-sm">{generalStats.justifiedAbsences}</strong>
+                </div>
+                <div className="bg-rose-50/50 p-2 rounded-lg border border-rose-100 text-center col-span-2 sm:col-span-1">
+                  <span className="text-rose-400 block text-[9px] uppercase font-bold">Faltas Não Justificadas</span>
+                  <strong className="text-rose-900 text-sm">{generalStats.unjustifiedAbsences}</strong>
+                </div>
+              </div>
             </div>
             
-            <div className="flex flex-wrap items-center justify-around gap-x-6 gap-y-4 text-center text-xs border-t md:border-t-0 md:border-l border-slate-200 pt-3 md:pt-0 md:pl-6 shrink-0">
+            <div className="flex flex-wrap items-center justify-around gap-x-6 gap-y-4 text-center text-xs border-t border-slate-200 pt-3">
               <div className="flex flex-col items-center px-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-none">Obrigações</p>
-                <p className="text-lg font-black text-slate-600 mt-1">{generalStats.requiredEventsConsidered}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-none">Obrigações Aplicáveis</p>
+                <p className="text-lg font-black text-slate-600 mt-1">{generalStats.applicableMandatoryEvents}</p>
               </div>
               <div className="flex flex-col items-center px-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-none">Presenças</p>
-                <p className="text-lg font-black text-emerald-600 mt-1">{generalStats.requiredPresences}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-none">Presenças Obrigatórias</p>
+                <p className="text-lg font-black text-emerald-600 mt-1">{generalStats.mandatoryPresences}</p>
               </div>
               <div className="flex flex-col items-center px-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-none">Faltas</p>
-                <p className="text-lg font-black text-rose-600 mt-1">{generalStats.requiredAbsences}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-none">Faltas Não Justificadas (U)</p>
+                <p className="text-lg font-black text-rose-600 mt-1">{generalStats.unjustifiedAbsences}</p>
               </div>
               <div className="flex flex-col items-center px-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-none">Justificadas</p>
-                <p className="text-lg font-black text-amber-500 mt-1">{generalStats.requiredJustifications}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block leading-none">Faltas Justificadas</p>
+                <p className="text-lg font-black text-amber-500 mt-1">{generalStats.justifiedAbsences}</p>
               </div>
             </div>
           </div>
@@ -257,9 +283,9 @@ export default function MemberProfileModal({
                 Nenhum evento avaliado arquivado no sistema para esse membro no momento.
               </p>
             ) : (
-              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-white">
+              <div className="border border-slate-200 rounded-xl shadow-xs bg-white overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-150 text-left text-xs">
-                  <thead className="bg-slate-50 font-bold uppercase tracking-wider text-slate-500 text-[10px]">
+                  <thead className="bg-slate-50 font-bold uppercase tracking-wider text-slate-500 text-[10px] rounded-t-xl">
                     <tr>
                       <th className="px-4 py-2.5">Atividade</th>
                       <th className="px-4 py-2.5">Data</th>
@@ -314,40 +340,20 @@ export default function MemberProfileModal({
                           <td className="px-4 py-3 text-slate-500 font-mono">
                             {new Date(event.date + 'T12:00:00').toLocaleDateString('pt-BR')}
                           </td>
-                          <td className="px-4 py-3 text-slate-500 relative">
+                          <td className="px-4 py-3 text-slate-500">
                             {event.category === 'outros' ? (
-                              <div className="inline-block relative">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveTooltipId(activeTooltipId === event.id ? null : event.id);
-                                  }}
-                                  onMouseEnter={() => setActiveTooltipId(event.id)}
-                                  onMouseLeave={() => setActiveTooltipId(null)}
-                                  className="text-blue-600 hover:text-blue-800 font-bold underline decoration-dotted cursor-pointer flex items-center gap-1 focus:outline-none"
-                                >
-                                  <span>Outros</span>
-                                  <Info className="h-3.5 w-3.5 shrink-0 text-blue-500" />
-                                </button>
-                                
-                                {activeTooltipId === event.id && (
-                                  <div className="absolute left-0 bottom-full mb-2 bg-slate-950 text-white rounded-xl p-3 shadow-xl z-55 min-w-[220px] text-[11px] space-y-1.5 transition-all select-none border border-slate-800 animate-fade-in">
-                                    <div className="font-extrabold text-blue-400 uppercase tracking-widest text-[9px] border-b border-slate-800 pb-1 flex items-center gap-1">
-                                      <Info className="h-3 w-3 text-blue-400" /> Atividade Personalizada
-                                    </div>
-                                    <div>
-                                      <p className="font-bold text-white text-xs whitespace-normal">{event.title}</p>
-                                      {event.description ? (
-                                        <p className="text-slate-300 mt-1 font-medium leading-normal whitespace-normal">{event.description}</p>
-                                      ) : (
-                                        <p className="text-slate-400 mt-0.5 italic">Sem descrição registrada.</p>
-                                      )}
-                                    </div>
-                                    <div className="absolute top-full left-4 border-4 border-transparent border-t-slate-950" />
-                                  </div>
-                                )}
-                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTooltipEvent(activeTooltipEvent?.id === event.id ? null : event);
+                                }}
+                                className="text-blue-600 hover:text-blue-800 font-bold underline decoration-dotted cursor-pointer flex items-center gap-1 focus:outline-none bg-blue-50 hover:bg-blue-100/80 px-2 py-0.5 rounded-md transition-colors"
+                                title="Clique para ver detalhes desta atividade"
+                              >
+                                <span>Outros</span>
+                                <Info className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+                              </button>
                             ) : (
                               CATEGORY_LABELS[event.category] || event.category
                             )}
@@ -363,7 +369,7 @@ export default function MemberProfileModal({
                           <td className="px-4 py-3 text-slate-500 italic max-w-[170px] whitespace-normal">
                             {eligibility === 'optional' && status === 'present' ? (
                               <div className="text-indigo-650 font-bold text-[10px]">
-                                Participação extra — peso {EXTRA_PARTICIPATION_WEIGHT} computado
+                                Participação opcional registrada (+0,25 crédito opcional)
                                 {note ? <span className="text-slate-400 block font-normal text-[9px]">Obs: {note}</span> : null}
                               </div>
                             ) : (
@@ -399,6 +405,68 @@ export default function MemberProfileModal({
         </div>
 
       </div>
+
+      {/* Custom Activity Detail Card Popup */}
+      {activeTooltipEvent && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px] animate-fade-in"
+          onClick={() => setActiveTooltipEvent(null)}
+        >
+          <div
+            className="bg-slate-950 text-white rounded-2xl p-5 shadow-2xl max-w-sm w-full border border-slate-800 space-y-3.5 relative text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <div className="font-extrabold text-blue-400 uppercase tracking-widest text-[10px] flex items-center gap-1.5">
+                <Info className="h-4 w-4 text-blue-400" /> Atividade Personalizada
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTooltipEvent(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                title="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <div>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Título do Evento</span>
+                <p className="font-bold text-white text-sm leading-snug">{activeTooltipEvent.title}</p>
+              </div>
+
+              <div className="flex items-center gap-2 text-slate-300 text-[11px] font-medium bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-800">
+                <Calendar className="h-3.5 w-3.5 text-blue-400" />
+                <span>Data: {new Date(activeTooltipEvent.date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+              </div>
+
+              <div>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Descrição / Detalhes</span>
+                {activeTooltipEvent.description ? (
+                  <p className="text-slate-200 font-normal leading-relaxed bg-slate-900/90 p-3 rounded-xl border border-slate-800 text-xs whitespace-pre-wrap max-h-48 overflow-y-auto">
+                    {activeTooltipEvent.description}
+                  </p>
+                ) : (
+                  <p className="text-slate-500 italic text-xs bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/60">
+                    Nenhuma descrição adicional foi registrada para esta atividade.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-1 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setActiveTooltipEvent(null)}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold py-2 px-4 rounded-xl transition text-xs cursor-pointer text-center"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

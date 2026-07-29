@@ -195,7 +195,7 @@ CREATE TABLE IF NOT EXISTS "demolay_event_photos" (
 -- 7. CRIAR TABELA DE CONFIGURAÇÕES DO SISTEMA
 CREATE TABLE IF NOT EXISTS "system_settings" (
   "id" TEXT PRIMARY KEY DEFAULT 'current',
-  "plusWeight" NUMERIC NOT NULL DEFAULT 0.5,
+  "plusWeight" NUMERIC NOT NULL DEFAULT 0.25,
   "greenThreshold" INTEGER NOT NULL DEFAULT 70,
   "yellowThreshold" INTEGER NOT NULL DEFAULT 60,
   "updatedAt" TIMESTAMPTZ DEFAULT NOW()
@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS "system_settings" (
 
 -- Inserir configuração padrão
 INSERT INTO "system_settings" ("id", "plusWeight", "greenThreshold", "yellowThreshold")
-VALUES ('current', 0.5, 70, 60)
+VALUES ('current', 0.25, 70, 60)
 ON CONFLICT ("id") DO NOTHING;
 
 -- 8. CRIAR TABELA DE LOGS DE AUDITORIA (audit_logs)

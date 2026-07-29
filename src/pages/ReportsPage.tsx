@@ -11,7 +11,7 @@ import {
   Info
 } from 'lucide-react';
 import { Member, Event, Attendance, EventCategory, MemberStats } from '../types';
-import { calculateMemberStats, calculateChapterAverage, CATEGORY_LABELS } from '../utils/calculations';
+import { calculateMemberStats, calculateChapterAverage, CATEGORY_LABELS, sortMemberStatsList, formatPercent } from '../utils/calculations';
 import { exportToCSV } from '../utils/exportCsv';
 import { useManagementTerm } from '../contexts/ManagementTermContext';
 
@@ -118,36 +118,13 @@ export default function ReportsPage({ members, events, attendances }: ReportsPag
     })
   );
 
-  // 2. Perform filters
-  const filteredList = computedList
-    .filter(stat => {
-      const matchesZone = zoneFilter === 'all' || (stat.hasConsideredEvents && stat.zone === zoneFilter);
-      return matchesZone;
-    })
-    .sort((a, b) => {
-      if (!a.hasConsideredEvents && b.hasConsideredEvents) return 1;
-      if (a.hasConsideredEvents && !b.hasConsideredEvents) return -1;
-      if (!a.hasConsideredEvents && !b.hasConsideredEvents) return a.member.name.localeCompare(b.member.name);
-      
-      // Rule 1: maior porcentagem final
-      if (b.finalPercentage !== a.finalPercentage) {
-        return b.finalPercentage - a.finalPercentage;
-      }
-      // Rule 2: maior frequência obrigatória
-      if (b.mandatoryFrequency !== a.mandatoryFrequency) {
-        return b.mandatoryFrequency - a.mandatoryFrequency;
-      }
-      // Rule 3: maior número de presenças obrigatórias
-      if (b.requiredPresences !== a.requiredPresences) {
-        return b.requiredPresences - a.requiredPresences;
-      }
-      // Rule 4: maior número de participações extras
-      if (b.extraParticipations !== a.extraParticipations) {
-        return b.extraParticipations - a.extraParticipations;
-      }
-      // Rule 5: ordem alfabética
-      return a.member.name.localeCompare(b.member.name);
-    });
+  // 2. Perform filters and sorting
+  const baseFiltered = computedList.filter(stat => {
+    const matchesZone = zoneFilter === 'all' || (stat.hasConsideredEvents && stat.zone === zoneFilter);
+    return matchesZone;
+  });
+
+  const filteredList = sortMemberStatsList(baseFiltered);
 
   // Calculate Chapter stats within filters
   const selectedEvents = filteredBaseEvents.filter(e => {
@@ -483,12 +460,12 @@ export default function ReportsPage({ members, events, attendances }: ReportsPag
                       </td>
                       <td className="px-5 py-3 text-center">
                         <span className="font-black text-slate-800">
-                          {stat.hasConsideredEvents ? `${stat.finalPercentage}%` : 'S/E'}
+                          {formatPercent(stat.rawFinalPercentage, stat.hasConsideredEvents)}
                         </span>
                       </td>
                       <td className="px-5 py-3 text-center">
                         <span className="font-semibold text-slate-600">
-                          {stat.hasConsideredEvents ? `${stat.mandatoryFrequency}%` : 'S/E'}
+                          {formatPercent(stat.rawMandatoryFrequency, stat.hasConsideredEvents)}
                         </span>
                       </td>
                       <td className="px-5 py-3">
@@ -497,19 +474,21 @@ export default function ReportsPage({ members, events, attendances }: ReportsPag
                         </span>
                       </td>
                       <td className="px-5 py-3 text-center font-bold font-mono text-emerald-600">
-                        {stat.requiredPresences}
+                        {stat.mandatoryPresences}
                       </td>
                       <td className="px-5 py-3 text-center font-bold text-rose-600 font-mono">
-                        {stat.requiredAbsences}
+                        {stat.unjustifiedAbsences}
                       </td>
                       <td className="px-5 py-3 text-center font-bold text-amber-600 font-mono">
-                        {stat.requiredJustifications}
+                        {stat.justifiedAbsences}
                       </td>
                       <td className="px-5 py-3 text-center font-bold font-mono text-indigo-600">
-                        {stat.extraParticipations > 0 ? (
+                        {stat.optionalPresences > 0 ? (
                           <div className="flex flex-col items-center justify-center">
-                            <span>+{stat.extraParticipations}</span>
-                            <span className="text-[9px] text-indigo-500 font-medium tracking-tight">+{stat.extraComputedPoints} pts</span>
+                            <span>{stat.optionalPresences} total</span>
+                            <span className="text-[9px] text-indigo-500 font-medium tracking-tight">
+                              {stat.optionalUsed} util. | {stat.optionalExcess} exced.
+                            </span>
                           </div>
                         ) : (
                           '0'

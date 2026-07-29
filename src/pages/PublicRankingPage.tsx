@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Member, Event, Attendance, MemberStats, EventCategory } from '../types';
-import { calculateMemberStats, CATEGORY_LABELS, EXTRA_PARTICIPATION_WEIGHT } from '../utils/calculations';
+import { calculateMemberStats, CATEGORY_LABELS, sortMemberStatsList, formatPercent } from '../utils/calculations';
 import { getLocalManagementTerms } from '../utils/storage';
 import ProgressBar from '../components/ProgressBar';
 import MemberProfileModal from '../components/MemberProfileModal';
@@ -211,31 +211,13 @@ export default function PublicRankingPage({
     })
   );
 
-  const filteredAndSortedList = computedList
-    .filter(stat => {
-      const matchesSearch = stat.member.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesDegree = degreeFilter === 'all' || stat.member.degree === degreeFilter;
-      return matchesSearch && matchesDegree;
-    })
-    .sort((a, b) => {
-      if (!a.hasConsideredEvents && b.hasConsideredEvents) return 1;
-      if (a.hasConsideredEvents && !b.hasConsideredEvents) return -1;
-      if (!a.hasConsideredEvents && !b.hasConsideredEvents) return a.member.name.localeCompare(b.member.name);
+  const filteredList = computedList.filter(stat => {
+    const matchesSearch = stat.member.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesDegree = degreeFilter === 'all' || stat.member.degree === degreeFilter;
+    return matchesSearch && matchesDegree;
+  });
 
-      if (b.finalPercentage !== a.finalPercentage) {
-        return b.finalPercentage - a.finalPercentage;
-      }
-      if (b.mandatoryFrequency !== a.mandatoryFrequency) {
-        return b.mandatoryFrequency - a.mandatoryFrequency;
-      }
-      if (b.requiredPresences !== a.requiredPresences) {
-        return b.requiredPresences - a.requiredPresences;
-      }
-      if (b.extraParticipations !== a.extraParticipations) {
-        return b.extraParticipations - a.extraParticipations;
-      }
-      return a.member.name.localeCompare(b.member.name);
-    });
+  const filteredAndSortedList = sortMemberStatsList(filteredList);
 
   const getTodayFormatted = () => {
     return new Date().toLocaleDateString('pt-BR', {
@@ -300,7 +282,7 @@ export default function PublicRankingPage({
               Critério da Porcentagem Final
             </h4>
             <p className="text-indigo-950 text-xs font-medium leading-normal">
-              A porcentagem final considera presenças obrigatórias nas atividades do nosso Capítulo.
+              A porcentagem final considera as presenças em atividades obrigatórias e atividades opcionais.
             </p>
           </div>
         </div>
@@ -539,23 +521,32 @@ export default function PublicRankingPage({
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3 p-3 rounded-lg bg-slate-50 border border-slate-150 text-xs">
                         <div>
                           <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Porcentagem Final</span>
-                          <strong className="text-slate-800 text-sm font-display">{stat.finalPercentage}%</strong>
+                          <strong className="text-slate-800 text-sm font-display">
+                            {formatPercent(stat.rawFinalPercentage, stat.hasConsideredEvents)}
+                          </strong>
                         </div>
                         <div>
                           <span className="text-slate-450 block text-[9px] uppercase font-bold tracking-wider">Frequência Obrigatória</span>
-                          <strong className="text-slate-700 text-sm">{stat.mandatoryFrequency}%</strong>
+                          <strong className="text-slate-700 text-sm">
+                            {formatPercent(stat.rawMandatoryFrequency, stat.hasConsideredEvents)}
+                          </strong>
                         </div>
                         <div>
-                          <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Presenças Obrigatórias</span>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Obrigações (P / F / J)</span>
                           <span className="font-bold">
-                            <span className="text-emerald-600">{stat.requiredPresences}</span>
+                            <span className="text-emerald-600">{stat.mandatoryPresences}P</span>
                             <span className="text-slate-400"> / </span>
-                            <span className="text-slate-700">{stat.requiredEventsConsidered}</span>
+                            <span className="text-rose-500">{stat.unjustifiedAbsences}F</span>
+                            <span className="text-slate-400"> / </span>
+                            <span className="text-amber-500">{stat.justifiedAbsences}J</span>
                           </span>
                         </div>
                         <div>
-                          <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Participações Extras (Plus)</span>
-                          <strong className="text-indigo-650 font-bold">+{stat.extraParticipations} extras</strong>
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold tracking-wider">Atividades Opcionais</span>
+                          <strong className="text-indigo-650 font-bold">{stat.optionalPresences} total</strong>
+                          <span className="text-[9px] text-slate-500 block">
+                            {stat.optionalUsed} util. | {stat.optionalExcess} exced.
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -566,7 +557,7 @@ export default function PublicRankingPage({
                     <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block text-left lg:text-right">Aproveitamento</span>
                     <ProgressBar value={stat.finalPercentage} hasEvents={stat.hasConsideredEvents} showText={false} />
                     <div className="flex justify-between text-[10px] font-bold text-slate-500 lg:justify-end lg:gap-3">
-                      <span>Resultado: <strong>{stat.finalPercentage}%</strong></span>
+                      <span>Resultado: <strong>{formatPercent(stat.rawFinalPercentage, stat.hasConsideredEvents)}</strong></span>
                     </div>
                   </div>
 

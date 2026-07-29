@@ -12,8 +12,8 @@ export default function ProgressBar({ value, hasEvents, showText = true }: Progr
       <div className="w-full">
         <div className="h-2.5 w-full bg-slate-200 rounded-full overflow-hidden" />
         {showText && (
-          <p className="text-xs text-slate-500 font-medium mt-1">
-            Sem eventos considerados
+          <p className="text-xs text-slate-500 font-medium mt-1 italic">
+            Frequência ainda não calculada
           </p>
         )}
       </div>

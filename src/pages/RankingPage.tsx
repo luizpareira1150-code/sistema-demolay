@@ -10,7 +10,7 @@ import {
   Info
 } from 'lucide-react';
 import { Member, Event, Attendance, EventCategory, MemberStats } from '../types';
-import { calculateMemberStats, CATEGORY_LABELS, EXTRA_PARTICIPATION_WEIGHT } from '../utils/calculations';
+import { calculateMemberStats, CATEGORY_LABELS, sortMemberStatsList, formatPercent } from '../utils/calculations';
 import ProgressBar from '../components/ProgressBar';
 import { useManagementTerm } from '../contexts/ManagementTermContext';
 import MemberProfileModal from '../components/MemberProfileModal';
@@ -127,39 +127,14 @@ export default function RankingPage({
     })
   );
 
-  // Perform list searches and order by rate descending
-  const filteredAndSortedList = computedList
-    .filter(stat => {
-      const matchesSearch = stat.member.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesZone = zoneFilter === 'all' || (stat.hasConsideredEvents && stat.zone === zoneFilter);
-      return matchesSearch && matchesZone;
-    })
-    // Sort descending based on multiple rules
-    .sort((a, b) => {
-      // Members without considered events go to bottom
-      if (!a.hasConsideredEvents && b.hasConsideredEvents) return 1;
-      if (a.hasConsideredEvents && !b.hasConsideredEvents) return -1;
-      if (!a.hasConsideredEvents && !b.hasConsideredEvents) return a.member.name.localeCompare(b.member.name);
-      
-      // Rule 1: maior porcentagem final
-      if (b.finalPercentage !== a.finalPercentage) {
-        return b.finalPercentage - a.finalPercentage;
-      }
-      // Rule 2: maior frequência obrigatória
-      if (b.mandatoryFrequency !== a.mandatoryFrequency) {
-        return b.mandatoryFrequency - a.mandatoryFrequency;
-      }
-      // Rule 3: maior número de presenças obrigatórias
-      if (b.requiredPresences !== a.requiredPresences) {
-        return b.requiredPresences - a.requiredPresences;
-      }
-      // Rule 4: maior número de participações extras
-      if (b.extraParticipations !== a.extraParticipations) {
-        return b.extraParticipations - a.extraParticipations;
-      }
-      // Rule 5: ordem alfabética
-      return a.member.name.localeCompare(b.member.name);
-    });
+  // Perform list searches and order by strict methodology rules
+  const filteredList = computedList.filter(stat => {
+    const matchesSearch = stat.member.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesZone = zoneFilter === 'all' || (stat.hasConsideredEvents && stat.zone === zoneFilter);
+    return matchesSearch && matchesZone;
+  });
+
+  const filteredAndSortedList = sortMemberStatsList(filteredList);
 
   return (
     <div className="space-y-6">
@@ -200,6 +175,17 @@ export default function RankingPage({
               ? `${formatDateBR(appliedStartDate)} a ${formatDateBR(appliedEndDate)}`
               : activeTerm?.name ? `Gestão ${activeTerm.name}` : 'Nenhuma gestão ativa'}
           </span>
+        </div>
+      </div>
+
+      {/* Methodology Explanation Banner */}
+      <div className="bg-indigo-50/70 border border-indigo-100 rounded-xl p-3.5 px-4 flex items-start gap-3 text-xs text-indigo-950 shadow-2xs">
+        <Info className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
+        <div className="space-y-0.5">
+          <p className="font-bold text-indigo-900 text-xs">Metodologia de Frequência e Recuperação:</p>
+          <p className="text-indigo-800 text-[11px] leading-relaxed">
+            Cada atividade opcional vale 0,25 crédito. A cada quatro opcionais, o membro recupera 75% de uma falta obrigatória. A recuperação é limitada à quantidade de faltas e nunca apaga completamente uma falta.
+          </p>
         </div>
       </div>
 
@@ -447,41 +433,45 @@ export default function RankingPage({
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1.5 mt-2.5 p-3 rounded-lg bg-slate-50/60 border border-slate-150/75 text-xs text-slate-600">
                       <div>
                         <span className="text-slate-450 block text-[9px] uppercase font-bold tracking-wider">Porcentagem Final</span>
-                        <strong className="text-slate-800 text-sm font-display">{stat.finalPercentage}%</strong>
+                        <strong className="text-slate-800 text-sm font-display">
+                          {formatPercent(stat.rawFinalPercentage, stat.hasConsideredEvents)}
+                        </strong>
                       </div>
                       <div>
                         <span className="text-slate-450 block text-[9px] uppercase font-bold tracking-wider">Frequência Obrigatória</span>
-                        <strong className="text-slate-700 text-sm">{stat.mandatoryFrequency}%</strong>
+                        <strong className="text-slate-700 text-sm">
+                          {formatPercent(stat.rawMandatoryFrequency, stat.hasConsideredEvents)}
+                        </strong>
                       </div>
                       <div>
-                        <span className="text-slate-450 block text-[9px] uppercase font-bold tracking-wider">Obrigatoriedades (P / F / J)</span>
+                        <span className="text-slate-450 block text-[9px] uppercase font-bold tracking-wider">Obrigações (P / F / J)</span>
                         <span className="font-bold">
-                          <span className="text-emerald-600">{stat.requiredPresences}</span>
+                          <span className="text-emerald-600">{stat.mandatoryPresences}P</span>
                           <span className="text-slate-400"> / </span>
-                          <span className="text-rose-500">{stat.requiredAbsences}</span>
+                          <span className="text-rose-500">{stat.unjustifiedAbsences}F</span>
                           <span className="text-slate-400"> / </span>
-                          <span className="text-amber-500">{stat.requiredJustifications}</span>
+                          <span className="text-amber-500">{stat.justifiedAbsences}J</span>
                         </span>
-                        <span className="text-[9px] text-slate-400 block">de {stat.requiredEventsConsidered} consideradas</span>
+                        <span className="text-[9px] text-slate-400 block">de {stat.applicableMandatoryEvents} aplicáveis</span>
                       </div>
                       <div>
-                        <span className="text-slate-450 block text-[9px] uppercase font-bold tracking-wider">Participações Extras (Plus)</span>
-                        <strong className="text-indigo-650">{stat.extraParticipations} presenças</strong>
-                        <span className="text-[9px] text-slate-450 block">
-                          +{stat.extraComputedPoints} pts (Peso: {EXTRA_PARTICIPATION_WEIGHT})
+                        <span className="text-slate-450 block text-[9px] uppercase font-bold tracking-wider">Opcionais (Total / Util. / Exced.)</span>
+                        <strong className="text-indigo-650">{stat.optionalPresences} total</strong>
+                        <span className="text-[9px] text-slate-500 block">
+                          {stat.optionalUsed} util. | {stat.optionalExcess} exced. (+{stat.rawRecoveredPercentage.toFixed(2).replace('.', ',')}% rec.)
                         </span>
                       </div>
                     </div>
                   </div>
                 </div>
  
-                {/* Meter progress bar using finalPercentage (attendanceRate maps to finalized percentage) */}
+                {/* Meter progress bar using finalPercentage */}
                 <div className="w-full xl:w-56 shrink-0 flex flex-col justify-center gap-1.5">
                   <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block text-left xl:text-right">Progresso (Porcentagem Final)</span>
                   <ProgressBar value={stat.finalPercentage} hasEvents={stat.hasConsideredEvents} showText={false} />
-                  <div className="flex justify-between text-[10px] font-bold text-slate-500 xl:justify-end xl:gap-4">
-                    <span>Final: <strong className="text-slate-800">{stat.finalPercentage}%</strong></span>
-                    <span>Freq. Obr: <strong className="text-slate-800">{stat.mandatoryFrequency}%</strong></span>
+                  <div className="flex justify-between text-[10px] font-bold text-slate-500 xl:justify-end xl:gap-2 flex-wrap">
+                    <span>Final: <strong className="text-slate-800">{formatPercent(stat.rawFinalPercentage, stat.hasConsideredEvents)}</strong></span>
+                    <span>Freq. Obr: <strong className="text-slate-800">{formatPercent(stat.rawMandatoryFrequency, stat.hasConsideredEvents)}</strong></span>
                   </div>
                 </div>
  

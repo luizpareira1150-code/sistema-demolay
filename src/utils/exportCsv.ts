@@ -1,23 +1,25 @@
 import { MemberStats } from '../types';
+import { formatPercent } from './calculations';
 
 export function exportToCSV(statsList: MemberStats[], filename = 'classificacao_demolay.csv'): void {
-  // Brazilian Portuguese header names matching requirements
+  // Brazilian Portuguese header names matching methodology
   const headers = [
     'Posição',
     'Nome',
     'Grau',
     'Nominata/Diretoria?',
     'Cargo',
-    'Porcentagem Final',
     'Frequência Obrigatória',
+    'Recuperação Opcionais',
+    'Frequência Final',
     'Zona',
     'Presenças Obrigatórias',
-    'Ausências Obrigatórias',
-    'Justificativas Obrigatórias',
-    'Eventos Obrigatórios Considerados',
-    'Participações Extras',
-    'Extras Computados',
-    'Peso do Plus'
+    'Faltas Não Justificadas (U)',
+    'Faltas Justificadas',
+    'Obrigações Aplicáveis (N)',
+    'Atividades Opcionais Totais (O)',
+    'Opcionais Utilizadas',
+    'Opcionais Excedentes'
   ];
 
   const rows = statsList.map((stat, index) => {
@@ -31,8 +33,12 @@ export function exportToCSV(statsList: MemberStats[], filename = 'classificacao_
     const degreeLabel = stat.member.degree === 'demolay' ? 'DeMolay' : 'Iniciático';
     const nominataStr = stat.member.isNominata ? 'Sim' : 'Não';
     const roleStr = stat.member.isNominata ? (stat.member.nominataRole || 'Qualificado') : 'N/A';
-    const finalPctStr = stat.hasConsideredEvents ? `${stat.finalPercentage}%` : 'S/E';
-    const mandatoryFreqStr = stat.hasConsideredEvents ? `${stat.mandatoryFrequency}%` : 'S/E';
+    
+    const finalPctStr = formatPercent(stat.rawFinalPercentage, stat.hasConsideredEvents);
+    const mandatoryFreqStr = formatPercent(stat.rawMandatoryFrequency, stat.hasConsideredEvents);
+    const recoveredPctStr = stat.unjustifiedAbsences > 0 && stat.recoveredPresences > 0
+      ? `+${formatPercent(stat.rawRecoveredPercentage)}`
+      : '0%';
 
     return [
       `${index + 1}º`,
@@ -40,16 +46,17 @@ export function exportToCSV(statsList: MemberStats[], filename = 'classificacao_
       degreeLabel,
       nominataStr,
       roleStr,
-      finalPctStr,
       mandatoryFreqStr,
+      recoveredPctStr,
+      finalPctStr,
       zoneLabel,
-      stat.requiredPresences.toString(),
-      stat.requiredAbsences.toString(),
-      stat.requiredJustifications.toString(),
-      stat.requiredEventsConsidered.toString(),
-      stat.extraParticipations.toString(),
-      stat.extraComputedPoints.toString(),
-      '0.5' // Peso do plus
+      stat.mandatoryPresences.toString(),
+      stat.unjustifiedAbsences.toString(),
+      stat.justifiedAbsences.toString(),
+      stat.applicableMandatoryEvents.toString(),
+      stat.optionalPresences.toString(),
+      stat.optionalUsed.toString(),
+      stat.optionalExcess.toString()
     ];
   });
 

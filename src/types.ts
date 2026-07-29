@@ -109,11 +109,27 @@ export interface MemberStats {
   requiredJustifications: number;
   requiredEventsConsidered: number;
 
+  // New methodology fields
+  applicableMandatoryEvents: number; // N
+  mandatoryPresences: number; // P
+  justifiedAbsences: number;
+  unjustifiedAbsences: number; // U
+  optionalPresences: number; // O
+  optionalCreditsGross: number; // O * 0.25
+  optionalCreditsUsable: number; // min(gross, U)
+  recoveredPresences: number; // usable * 0.75
+  recoveredPercentage: number; // (recoveredPresences / N) * 100
+  optionalUsed: number; // min(O, U * 4)
+  optionalExcess: number; // max(O - optionalUsed, 0)
+
   extraParticipations: number;
   extraComputedPoints: number;
 
   mandatoryFrequency: number;
   finalPercentage: number;
+  rawMandatoryFrequency: number;
+  rawFinalPercentage: number;
+  rawRecoveredPercentage: number;
 
   attendanceRate: number; // Maps to finalPercentage with precision for backward-compatibility
   presents: number; // Backward-compatibility (mapped to requiredPresences)
