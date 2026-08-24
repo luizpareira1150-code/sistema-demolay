@@ -450,145 +450,306 @@ export async function uploadLocalToSupabase(): Promise<{ success: boolean; messa
   }
 }
 
+const ATTENDANCE_PAGE_SIZE = 500;
+const MAX_ATTENDANCE_PAGES = 10_000;
+
+type AttendanceRow = {
+  id: string;
+  eventId: string;
+  memberId: string;
+  status: Attendance['status'];
+  note?: string | null;
+  eligibility?: Attendance['eligibility'] | null;
+  management_term_id?: string | null;
+};
+
+type DownloadData = {
+  members: Member[];
+  events: Event[];
+  attendances: Attendance[];
+  users: User[];
+  managementTerms: ManagementTerm[];
+};
+
+type DownloadResult = {
+  success: boolean;
+  message: string;
+  data?: DownloadData;
+};
+
+type DownloadSnapshot = {
+  data: DownloadData;
+  photos: EventPhoto[];
+  shouldSaveManagementTerms: boolean;
+};
+
+let activeDownload: Promise<DownloadResult> | null = null;
+let refreshRequested = false;
+
+function validateAttendancePage(
+  page: AttendanceRow[],
+  seenIds: Set<string>,
+  seenAttendanceKeys: Set<string>
+): void {
+  for (const attendance of page) {
+    if (typeof attendance.id !== 'string' || attendance.id.length === 0) {
+      throw new Error('Presença recebida sem id válido durante a paginação.');
+    }
+
+    if (typeof attendance.eventId !== 'string' || typeof attendance.memberId !== 'string') {
+      throw new Error(`Presença ${attendance.id} recebida sem eventId ou memberId válido.`);
+    }
+
+    if (seenIds.has(attendance.id)) {
+      throw new Error(`ID de presença duplicado durante a paginação: ${attendance.id}.`);
+    }
+
+    const attendanceKey = JSON.stringify([attendance.eventId, attendance.memberId]);
+    if (seenAttendanceKeys.has(attendanceKey)) {
+      throw new Error(`Presença duplicada para evento e membro durante a paginação: ${attendance.id}.`);
+    }
+
+    seenIds.add(attendance.id);
+    seenAttendanceKeys.add(attendanceKey);
+  }
+}
+
+async function fetchAllAttendance(): Promise<AttendanceRow[]> {
+  const attendances: AttendanceRow[] = [];
+  const seenIds = new Set<string>();
+  const seenAttendanceKeys = new Set<string>();
+  let lastId: string | undefined;
+
+  for (let pageIndex = 0; pageIndex <= MAX_ATTENDANCE_PAGES; pageIndex += 1) {
+    let query = supabase.from(SUPABASE_TABLES.ATTENDANCES).select('*');
+    if (lastId !== undefined) {
+      query = query.gt('id', lastId);
+    }
+
+    const { data, error } = await query
+      .order('id', { ascending: true })
+      .limit(ATTENDANCE_PAGE_SIZE);
+
+    if (error) {
+      throw new Error(`Erro ao buscar presenças na página ${pageIndex + 1}: ${error.message}`);
+    }
+
+    const page: AttendanceRow[] = data || [];
+    if (page.length === 0) {
+      return attendances;
+    }
+
+    if (pageIndex === MAX_ATTENDANCE_PAGES) {
+      throw new Error(`Limite defensivo de ${MAX_ATTENDANCE_PAGES} páginas de presença excedido.`);
+    }
+
+    validateAttendancePage(page, seenIds, seenAttendanceKeys);
+
+    const nextLastId = page[page.length - 1].id;
+    if (nextLastId === lastId) {
+      throw new Error('Cursor de presença não avançou durante a paginação.');
+    }
+
+    attendances.push(...page);
+    lastId = nextLastId;
+  }
+
+  throw new Error(`Limite defensivo de ${MAX_ATTENDANCE_PAGES} páginas de presença excedido.`);
+}
+
+async function loadDownloadSnapshot(): Promise<DownloadSnapshot> {
+  // 1. Fetch Members
+  const membersRes = await supabase.from(SUPABASE_TABLES.MEMBERS).select('*');
+  if (membersRes.error) throw new Error(`Erro ao buscar Membros: ${membersRes.error.message}`);
+
+  // 2. Fetch Events
+  const eventsRes = await supabase.from(SUPABASE_TABLES.EVENTS).select('*');
+  if (eventsRes.error) throw new Error(`Erro ao buscar Eventos: ${eventsRes.error.message}`);
+
+  // 3. Fetch Attendances
+  const attendanceRows = await fetchAllAttendance();
+
+  // 4. Fetch Users
+  const usersRes = await supabase.from(SUPABASE_TABLES.USERS).select('*');
+  if (usersRes.error) throw new Error(`Erro ao buscar Usuários: ${usersRes.error.message}`);
+
+  // 5. Fetch Management Terms
+  let fetchedManagementTerms: ManagementTerm[] = [];
+  let termLoadError = false;
+  try {
+    const termsRes = await supabase.from(SUPABASE_TABLES.MANAGEMENT_TERMS).select('*');
+    if (termsRes.error) {
+      console.warn('Erro ao baixar gestões do Supabase:', termsRes.error.message);
+      termLoadError = true;
+    } else if (termsRes.data) {
+      fetchedManagementTerms = termsRes.data.map((t: any) => ({
+        id: t.id,
+        name: t.name,
+        year: t.year,
+        semester: t.semester,
+        startDate: t.start_date,
+        endDate: t.end_date,
+        status: t.status,
+        createdAt: t.created_at,
+        updatedAt: t.updated_at
+      }));
+    }
+  } catch (termErr) {
+    console.warn('Erro não-crítico ao baixar gestões do Supabase:', termErr);
+    termLoadError = true;
+  }
+
+  // 6. Fetch Photos (Non-blocking fallback to keep the sync resilient)
+  let fetchedPhotos: EventPhoto[] = [];
+  try {
+    const photosRes = await supabase.from(SUPABASE_TABLES.PHOTOS).select('*');
+    if (!photosRes.error && photosRes.data) {
+      fetchedPhotos = photosRes.data.map((p: any) => ({
+        id: p.id,
+        eventId: p.eventId,
+        photo: p.photo,
+        createdAt: p.createdAt || new Date().toISOString()
+      }));
+    }
+  } catch (photoErr) {
+    console.warn('Erro não-crítico ao baixar fotos do Supabase:', photoErr);
+  }
+
+  const fetchedMembers: Member[] = (membersRes.data || []).map(m => ({
+    id: m.id,
+    name: m.name,
+    status: m.status || 'active',
+    joinedAt: m.joinedAt || '',
+    notes: m.notes || '',
+    createdAt: m.createdAt || '',
+    degree: m.degree || 'iniciatico',
+    isNominata: m.isNominata ?? false,
+    nominataRole: m.nominataRole || '',
+    isNominataIniciacao: m.isNominataIniciacao ?? false,
+    nominataIniciacaoRole: m.nominataIniciacaoRole || '',
+    isNominataElevacao: m.isNominataElevacao ?? false,
+    nominataElevacaoRole: m.nominataElevacaoRole || '',
+    managementTermId: m.management_term_id || undefined,
+    evaluationStartDate: m.evaluation_start_date || m.joinedAt || m.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0]
+  }));
+
+  const fetchedEvents: Event[] = (eventsRes.data || []).map(e => ({
+    id: e.id,
+    title: e.title || '',
+    category: e.category,
+    date: e.date,
+    description: e.description || '',
+    createdAt: e.createdAt || '',
+    requiredFor: Array.isArray(e.requiredFor) ? e.requiredFor : [],
+    optionalFor: Array.isArray(e.optionalFor) ? e.optionalFor : [],
+    nominataType: e.nominataType || 'none',
+    managementTermId: e.management_term_id || undefined
+  }));
+
+  const fetchedAttendances: Attendance[] = attendanceRows.map(a => ({
+    id: a.id,
+    eventId: a.eventId,
+    memberId: a.memberId,
+    status: a.status,
+    note: a.note || '',
+    eligibility: a.eligibility || 'not_applicable',
+    managementTermId: a.management_term_id || undefined
+  }));
+
+  const fetchedUsers: User[] = (usersRes.data || []).map(u => ({
+    id: u.id,
+    name: u.name || '',
+    email: u.email || '',
+    password: u.password || '',
+    role: u.role || 'visualizacao',
+    managementTermId: u.management_term_id || undefined,
+    createdBy: u.created_by || undefined,
+    position: u.position || undefined
+  }));
+
+  return {
+    data: {
+      members: fetchedMembers,
+      events: fetchedEvents,
+      attendances: fetchedAttendances,
+      users: fetchedUsers,
+      managementTerms: fetchedManagementTerms
+    },
+    photos: fetchedPhotos,
+    shouldSaveManagementTerms: !termLoadError
+  };
+}
+
+function publishDownloadSnapshot(snapshot: DownloadSnapshot): void {
+  saveLocalMembers(snapshot.data.members);
+  saveLocalEvents(snapshot.data.events);
+  saveLocalAttendances(snapshot.data.attendances);
+  saveLocalUsers(snapshot.data.users);
+  if (snapshot.shouldSaveManagementTerms) {
+    saveLocalManagementTerms(snapshot.data.managementTerms);
+  }
+  saveEventPhotos(snapshot.photos);
+}
+
+function toDownloadError(error: unknown): DownloadResult {
+  const message = error instanceof Error ? error.message : String(error);
+  return { success: false, message: `Erro ao baixar dados: ${message}` };
+}
+
+async function runDownloadQueue(): Promise<DownloadResult> {
+  try {
+    while (true) {
+      refreshRequested = false;
+
+      let snapshot: DownloadSnapshot | undefined;
+      let loadError: unknown;
+      try {
+        snapshot = await loadDownloadSnapshot();
+      } catch (error) {
+        loadError = error;
+      }
+
+      if (refreshRequested) {
+        continue;
+      }
+
+      if (loadError !== undefined) {
+        return toDownloadError(loadError);
+      }
+
+      if (!snapshot) {
+        return toDownloadError(new Error('Sincronização concluída sem dados para publicar.'));
+      }
+
+      try {
+        publishDownloadSnapshot(snapshot);
+      } catch (error) {
+        return toDownloadError(error);
+      }
+
+      return {
+        success: true,
+        message: 'Dados baixados com sucesso e unificados no navegador!',
+        data: snapshot.data
+      };
+    }
+  } finally {
+    activeDownload = null;
+    refreshRequested = false;
+  }
+}
+
 /**
  * Downloads all data from Supabase and replaces local storage.
  */
-export async function downloadSupabaseToLocal(): Promise<{ success: boolean; message: string; data?: { members: Member[]; events: Event[]; attendances: Attendance[]; users: User[]; managementTerms: ManagementTerm[] } }> {
-  try {
-    // 1. Fetch Members
-    const membersRes = await supabase.from(SUPABASE_TABLES.MEMBERS).select('*');
-    if (membersRes.error) throw new Error(`Erro ao buscar Membros: ${membersRes.error.message}`);
-
-    // 2. Fetch Events
-    const eventsRes = await supabase.from(SUPABASE_TABLES.EVENTS).select('*');
-    if (eventsRes.error) throw new Error(`Erro ao buscar Eventos: ${eventsRes.error.message}`);
-
-    // 3. Fetch Attendances
-    const attendancesRes = await supabase.from(SUPABASE_TABLES.ATTENDANCES).select('*');
-    if (attendancesRes.error) throw new Error(`Erro ao buscar Presenças: ${attendancesRes.error.message}`);
-
-    // 4. Fetch Users
-    const usersRes = await supabase.from(SUPABASE_TABLES.USERS).select('*');
-    if (usersRes.error) throw new Error(`Erro ao buscar Usuários: ${usersRes.error.message}`);
-
-    // 5. Fetch Management Terms
-    let fetchedManagementTerms: ManagementTerm[] = [];
-    let termLoadError = false;
-    try {
-      const termsRes = await supabase.from(SUPABASE_TABLES.MANAGEMENT_TERMS).select('*');
-      if (termsRes.error) {
-        console.warn('Erro ao baixar gestões do Supabase:', termsRes.error.message);
-        termLoadError = true;
-      } else if (termsRes.data) {
-        fetchedManagementTerms = termsRes.data.map((t: any) => ({
-          id: t.id,
-          name: t.name,
-          year: t.year,
-          semester: t.semester,
-          startDate: t.start_date,
-          endDate: t.end_date,
-          status: t.status,
-          createdAt: t.created_at,
-          updatedAt: t.updated_at
-        }));
-      }
-    } catch (termErr) {
-      console.warn('Erro não-crítico ao baixar gestões do Supabase:', termErr);
-      termLoadError = true;
-    }
-
-    // 6. Fetch Photos (Non-blocking fallback to keep the sync resilient)
-    let fetchedPhotos: EventPhoto[] = [];
-    try {
-      const photosRes = await supabase.from(SUPABASE_TABLES.PHOTOS).select('*');
-      if (!photosRes.error && photosRes.data) {
-        fetchedPhotos = photosRes.data.map((p: any) => ({
-          id: p.id,
-          eventId: p.eventId,
-          photo: p.photo,
-          createdAt: p.createdAt || new Date().toISOString()
-        }));
-      }
-    } catch (photoErr) {
-      console.warn('Erro não-crítico ao baixar fotos do Supabase:', photoErr);
-    }
-
-    const fetchedMembers: Member[] = (membersRes.data || []).map(m => ({
-      id: m.id,
-      name: m.name,
-      status: m.status || 'active',
-      joinedAt: m.joinedAt || '',
-      notes: m.notes || '',
-      createdAt: m.createdAt || '',
-      degree: m.degree || 'iniciatico',
-      isNominata: m.isNominata ?? false,
-      nominataRole: m.nominataRole || '',
-      isNominataIniciacao: m.isNominataIniciacao ?? false,
-      nominataIniciacaoRole: m.nominataIniciacaoRole || '',
-      isNominataElevacao: m.isNominataElevacao ?? false,
-      nominataElevacaoRole: m.nominataElevacaoRole || '',
-      managementTermId: m.management_term_id || undefined,
-      evaluationStartDate: m.evaluation_start_date || m.joinedAt || m.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0]
-    }));
-
-    const fetchedEvents: Event[] = (eventsRes.data || []).map(e => ({
-      id: e.id,
-      title: e.title || '',
-      category: e.category,
-      date: e.date,
-      description: e.description || '',
-      createdAt: e.createdAt || '',
-      requiredFor: Array.isArray(e.requiredFor) ? e.requiredFor : [],
-      optionalFor: Array.isArray(e.optionalFor) ? e.optionalFor : [],
-      nominataType: e.nominataType || 'none',
-      managementTermId: e.management_term_id || undefined
-    }));
-
-    const fetchedAttendances: Attendance[] = (attendancesRes.data || []).map(a => ({
-      id: a.id,
-      eventId: a.eventId,
-      memberId: a.memberId,
-      status: a.status,
-      note: a.note || '',
-      eligibility: a.eligibility || 'not_applicable',
-      managementTermId: a.management_term_id || undefined
-    }));
-
-    const fetchedUsers: User[] = (usersRes.data || []).map(u => ({
-      id: u.id,
-      name: u.name || '',
-      email: u.email || '',
-      password: u.password || '',
-      role: u.role || 'visualizacao',
-      managementTermId: u.management_term_id || undefined,
-      createdBy: u.created_by || undefined,
-      position: u.position || undefined
-    }));
-
-    // Update local storage so that subsequent syncs and UI loads remain unified
-    saveLocalMembers(fetchedMembers);
-    saveLocalEvents(fetchedEvents);
-    saveLocalAttendances(fetchedAttendances);
-    saveLocalUsers(fetchedUsers);
-    if (!termLoadError) {
-      saveLocalManagementTerms(fetchedManagementTerms);
-    }
-    saveEventPhotos(fetchedPhotos);
-
-    return {
-      success: true,
-      message: 'Dados baixados com sucesso e unificados no navegador!',
-      data: {
-        members: fetchedMembers,
-        events: fetchedEvents,
-        attendances: fetchedAttendances,
-        users: fetchedUsers,
-        managementTerms: fetchedManagementTerms
-      }
-    };
-  } catch (err: any) {
-    return { success: false, message: `Erro ao baixar dados: ${err.message}` };
+export function downloadSupabaseToLocal(): Promise<DownloadResult> {
+  if (activeDownload) {
+    refreshRequested = true;
+    return activeDownload;
   }
+
+  activeDownload = runDownloadQueue();
+  return activeDownload;
 }
 
 // Helpers to read without circular import issues
@@ -763,4 +924,3 @@ export async function fetchAuditLogs(
     return { success: false, data: [], message: err.message || String(err) };
   }
 }
-
